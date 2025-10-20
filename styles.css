@@ -135,8 +135,19 @@ footer {
   background: #f0f0f0;
 }
 
+.table tr:nth-child(even) {
+  background: #f9f9f9;
+}
+
+.table tr:hover {
+  background: #f1f1f1;
+}
+
+/* Botões de ação dentro das tabelas */
 .actions button {
-  margin-right: 0.25rem;
+  margin-right: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
 }
 
 .btn {
@@ -270,10 +281,321 @@ textarea.input {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Estilo para a tabela de usuários, setores e falecidos */
+.table-container {
+  margin-top: 1.5rem;
+  overflow-x: auto;
+}
+
+/* Estilo para formulários */
+form {
+  margin-top: 1.5rem;
+}
+
+form .form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+form .form-row label {
+  font-weight: bold;
+  margin-bottom: 0.3rem;
+  display: block;
+}
+
+form .form-row input,
+form .form-row select,
+form .form-row textarea {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+form .footer-actions {
+  text-align: right;
+  margin-top: 1rem;
+}
+
+/* Estilo para mensagens de erro ou sucesso */
+.alert {
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+}
+
+.alert-success {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.alert-error {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+/* Estilo para a página de "Vagas por Setor" */
+#setoresButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+#setoresButtons button {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+#setoresButtons button:hover {
+  background: #1e5bbf;
+}
+
+#setorVagasList {
+  margin-top: 1rem;
+}
+
+#setorVagasList ul {
+  list-style: none;
+  padding: 0;
+}
+
+#setorVagasList ul li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #ddd;
+}
+
+#setorVagasList ul li:last-child {
+  border-bottom: none;
+}
+
+#setorVagasList button {
+  margin-top: 1rem;
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+#setorVagasList button:hover {
+  background: #c62c38;
+}
+
+/* Estilo para a tela inicial (home) */
+.home-card {
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+  color: #333;
+  text-align: center;
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.home-card h2 {
+  font-size: 2rem;
+  color: #1e88e5;
+  margin-bottom: 1rem;
+}
+
+.home-card p {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+}
+
+.home-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+
+.home-card ul li {
+  font-size: 1rem;
+  margin: 0.5rem 0;
+  color: #555;
+}
+
+.home-card ul li::before {
+  content: "✔";
+  color: #1e88e5;
+  margin-right: 0.5rem;
+}
+
+.home-card strong {
+  color: #0d47a1;
+  font-weight: bold;
+}
+
+/* Estilo para listas de usuários, setores, falecidos e financeiro */
+.list-container {
+  margin-top: 1.5rem;
+  background: var(--card-bg);
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.list-container h2 {
+  margin-bottom: 1rem;
+  color: var(--primary);
+}
+
+.list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #ddd;
+  transition: background 0.2s;
+}
+
+.list-item:last-child {
+  border-bottom: none;
+}
+
+.list-item:hover {
+  background: #f9f9f9;
+}
+
+.list-item strong {
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.list-item small {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.list-item .actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.list-item .actions button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.list-item .actions .btn-ghost {
+  background: transparent;
+  border: 1px solid #ccc;
+}
+
+.list-item .actions .btn-ghost:hover {
+  background: #f0f0f0;
+}
+
+.list-item .actions .btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.list-item .actions .btn-danger:hover {
+  background: #c62c38;
+}
+
+/* Estilo para formulários de criação e edição */
+.form-container {
+  margin-top: 1.5rem;
+  background: var(--card-bg);
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.form-container h2 {
+  margin-bottom: 1rem;
+  color: var(--primary);
+}
+
+.form-container .form-row {
+  margin-bottom: 1rem;
+}
+
+.form-container .form-row label {
+  font-weight: bold;
+  margin-bottom: 0.3rem;
+  display: block;
+}
+
+.form-container .form-row input,
+.form-container .form-row select,
+.form-container .form-row textarea {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.form-container .footer-actions {
+  text-align: right;
+  margin-top: 1rem;
+}
+
+.form-container .footer-actions button {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.form-container .footer-actions .btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+
+.form-container .footer-actions .btn-primary:hover {
+  background: #1e5bbf;
+}
+
+.form-container .footer-actions .btn-ghost {
+  background: transparent;
+  border: 1px solid #ccc;
+}
+
+.form-container .footer-actions .btn-ghost:hover {
+  background: #f0f0f0;
+}
+
 /* Responsividade */
 @media (max-width: 600px) {
   header { flex-direction: column; align-items: flex-start; }
   nav button { margin: 0.25rem 0; }
   main { padding: 1rem; }
   .user-controls { margin-left: 0; }
+
+  .table th, .table td {
+    font-size: 0.85rem;
+    padding: 0.5rem;
+  }
+
+  form .form-row {
+    flex-direction: column;
+  }
+
+  #setoresButtons {
+    flex-direction: column;
+  }
+
+  #setoresButtons button {
+    width: 100%;
+  }
 }

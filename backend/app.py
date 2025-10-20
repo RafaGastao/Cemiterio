@@ -2,12 +2,12 @@ import mysql.connector
 import hashlib
 import os
 
-from flask import Flask, jsonify, request
-from flask_cors import CORS
+from flask import Flask, jsonify, request 
+from flask_cors import CORS 
 
 from mysql.connector import Error
 from config import DB_CONFIG
-import jwt
+import jwt 
 import datetime
 
 app = Flask(__name__)
@@ -145,8 +145,7 @@ def usuarios_single(uid):
         return jsonify({'ok':True})
     if request.method == 'DELETE':
         cur.execute('DELETE FROM usuarios WHERE id=%s', (uid,))
-        conn.commit(); cur.close(); conn.close();
-        return jsonify({'ok':True})
+        conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
 
 
 # --- Setores CRUD ---
@@ -186,21 +185,27 @@ def setores_single(sid):
 
 @app.route('/api/setores/vagas', methods=['GET'])
 def listar_vagas():
-    """Lista vagas ocupadas e disponíveis por setor."""
+    """Lista vagas ocupadas e disponíveis por setor, incluindo o status de cada vaga."""
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT s.id, s.name, s.vagas, 
-                   COUNT(f.id) AS ocupadas, 
-                   (s.vagas - COUNT(f.id)) AS disponiveis
+            SELECT s.id AS setor_id, s.name AS setor, s.vagas AS total_vagas
             FROM setores s
-            LEFT JOIN falecidos f ON s.id = f.setor
-            GROUP BY s.id, s.name, s.vagas
         """)
-        data = rows_to_dicts(cur)
-        return jsonify(data)
+        setores = rows_to_dicts(cur)
+
+        for setor in setores:
+            cur.execute("""
+                SELECT f.vaga
+                FROM falecidos f
+                WHERE f.setor = %s
+            """, (setor['setor_id'],))
+            ocupadas = [row['vaga'] for row in rows_to_dicts(cur)]
+            setor['vagas'] = [{'numero': i + 1, 'ocupada': i + 1 in ocupadas} for i in range(setor['total_vagas'])]
+
+        return jsonify(setores)
     except Exception as e:
         print(f"Error listing vagas: {e}")
         return jsonify({'error': 'internal server error'}), 500
@@ -249,19 +254,43 @@ def ocupar_vaga(setor_id):
 
 
 # --- Falecidos CRUD ---
-@app.route('/api/falecidos', methods=['GET','POST'])
+@app.route('/api/falecidos', methods=['GET', 'POST'])
 def falecidos_collection():
-    conn = get_db_connection();
-    if not conn: return jsonify([]),500
+    conn = get_db_connection()
+    if not conn:
+        return jsonify([]), 500
     cur = conn.cursor()
     if request.method == 'GET':
-        cur.execute('SELECT id, name, anoNascimento, anoMorte, setor FROM falecidos')
-        data = rows_to_dicts(cur); cur.close(); conn.close(); return jsonify(data)
+        cur.execute('SELECT id, name, anoNascimento, anoMorte, setor, vaga FROM falecidos')
+        data = rows_to_dicts(cur)
+        cur.close()
+        conn.close()
+        return jsonify(data)
     else:
         p = request.json or {}
-        cur.execute('INSERT INTO falecidos (name, anoNascimento, anoMorte, setor) VALUES (%s,%s,%s,%s)',
-                    (p.get('name'), p.get('anoNascimento'), p.get('anoMorte'), p.get('setor')))
-        conn.commit(); nid = cur.lastrowid; cur.close(); conn.close(); return jsonify({'id':nid}),201
+        setor = p.get('setor')
+        vaga = p.get('vaga')
+
+        # Verificar se a vaga está disponível
+        cur.execute(
+            'SELECT COUNT(*) FROM falecidos WHERE setor = %s AND vaga = %s',
+            (setor, vaga)
+        )
+        if cur.fetchone()[0] > 0:
+            cur.close()
+            conn.close()
+            return jsonify({'error': 'A vaga selecionada já está ocupada.'}), 400
+
+        # Inserir o falecido e ocupar a vaga
+        cur.execute(
+            'INSERT INTO falecidos (name, anoNascimento, anoMorte, setor, vaga) VALUES (%s, %s, %s, %s, %s)',
+            (p.get('name'), p.get('anoNascimento'), p.get('anoMorte'), setor, vaga)
+        )
+        conn.commit()
+        nid = cur.lastrowid
+        cur.close()
+        conn.close()
+        return jsonify({'id': nid}), 201
 
 @app.route('/api/falecidos/<int:fid>', methods=['GET','PUT','DELETE'])
 def falecidos_single(fid):
@@ -280,6 +309,40 @@ def falecidos_single(fid):
         conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
     if request.method == 'DELETE':
         cur.execute('DELETE FROM falecidos WHERE id=%s', (fid,)); conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
+
+@app.route('/api/falecidos/<int:fid>/atribuir-vaga', methods=['PUT'])
+def atribuir_vaga(fid):
+    """Atribui uma vaga a um usuário falecido existente."""
+    conn = get_db_connection()
+    if not conn: return jsonify({'error': 'db connection error'}), 500
+    cur = conn.cursor()
+    try:
+        payload = request.json or {}
+        vaga = payload.get('vaga')
+        setor = payload.get('setor')
+
+        if not vaga or not setor:
+            return jsonify({'error': 'vaga e setor são obrigatórios'}), 400
+
+        # Verificar se a vaga já está ocupada
+        cur.execute("""
+            SELECT COUNT(*) FROM falecidos WHERE setor = %s AND vaga = %s
+        """, (setor, vaga))
+        if cur.fetchone()[0] > 0:
+            return jsonify({'error': 'Vaga já está ocupada'}), 400
+
+        # Atualizar a vaga do falecido
+        cur.execute("""
+            UPDATE falecidos SET vaga = %s, setor = %s WHERE id = %s
+        """, (vaga, setor, fid))
+        conn.commit()
+        return jsonify({'message': 'Vaga atribuída com sucesso'}), 200
+    except Exception as e:
+        print(f"Error assigning vaga: {e}")
+        return jsonify({'error': 'internal server error'}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 
 # --- Catálogo ---
