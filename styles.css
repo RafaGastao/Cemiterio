@@ -1,0 +1,279 @@
+:root {
+  --primary: #2a7ae4;
+  --danger: #e63946;
+  --bg: #f5f7fa;
+  --card-bg: #fff;
+  --text: #333;
+  --muted: #666;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  background: var(--primary);
+  color: #fff;
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+.logo h1 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+nav button {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  margin: 0 0.25rem;
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+nav button:hover {
+  background: rgba(255,255,255,0.2);
+}
+nav button.active {
+  background: #fff;
+  color: var(--primary);
+  font-weight: bold;
+}
+
+/* user controls (login/logout display) */
+.user-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.user-controls .btn {
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: transparent;
+}
+
+.user-controls .btn-ghost {
+  color: #fff;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.user-controls .user-name {
+  padding: 0.25rem 0.5rem;
+  background: rgba(0,0,0,0.12);
+  border-radius: 8px;
+  font-weight: bold;
+}
+
+/* rest of styles (unchanged mostly) */
+main {
+  padding: 2rem;
+  max-width: 1200px; /* Mais espaço para o catálogo */
+  margin: 0 auto;
+}
+
+footer {
+  background: #eee;
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.card {
+  background: var(--card-bg);
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  margin-bottom: 2rem;
+}
+
+.card h2, .card h3 {
+  margin-top: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.table th, .table td {
+  border: 1px solid #ddd;
+  padding: 0.75rem;
+  text-align: left;
+}
+
+.table th {
+  background: #f0f0f0;
+}
+
+.actions button {
+  margin-right: 0.25rem;
+}
+
+.btn {
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+
+/* Cards que estão dentro da grid (produtos) devem ter visual mais compacto
+   e altura uniforme para alinhar botões e conteúdo */
+.card .grid > .card {
+  padding: 1rem;
+  border-radius: 10px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 180px;
+}
+
+.card .grid > .card h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.05rem;
+}
+
+.card .grid > .card p { color: var(--muted); margin: 0 0 0.75rem 0; min-height: 2.4rem; /* força espaço para 2 linhas de descrição */ }
+
+/* Força os botões de ação a ficarem no final do card do produto */
+.card .grid > .card .btn { margin-top: auto; align-self: flex-start; }
+
+/* Compacta o conteúdo interno do card e força alinhamento dos elementos */
+.card .grid > .card .content { display:flex; flex-direction:column; gap:0.5rem; }
+.card .grid > .card .meta { color: var(--muted); font-size: 0.9rem; }
+
+/* Ajuste para telas pequenas: cards em 1 coluna, botões ocupam toda largura */
+@media (max-width: 600px) {
+  .card .grid { grid-template-columns: 1fr; }
+  .card .grid > .card { min-height: auto; }
+  .card .grid > .card .btn { align-self: stretch; }
+}
+
+/* Ajustes menores para aparência */
+.card > .grid { margin-bottom: 0.5rem; }
+
+/* Melhor espaçamento no rodapé das páginas */
+  font-size: 0.95rem;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: #1e5bbf; }
+
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: #c62c38; }
+
+.btn-ghost { background: transparent; border: 1px solid #ccc; }
+.btn-ghost:hover { background: #f0f0f0; }
+
+.input, select, textarea {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+textarea.input {
+  resize: vertical;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.footer-actions {
+  margin-top: 1rem;
+  text-align: right;
+}
+
+/* --- Estilo específico para tela de login --- */
+.login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(100vh - 80px);
+}
+
+.login-card {
+  max-width: 450px;
+  width: 100%;
+  background: var(--card-bg);
+  padding: 2rem;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.login-card h2 {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.login-card .form-row label {
+  font-weight: bold;
+  margin-bottom: 0.3rem;
+  display: block;
+}
+
+.login-card .footer-actions {
+  text-align: center;
+}
+
+/* animação suave */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsividade */
+@media (max-width: 600px) {
+  header { flex-direction: column; align-items: flex-start; }
+  nav button { margin: 0.25rem 0; }
+  main { padding: 1rem; }
+  .user-controls { margin-left: 0; }
+}
