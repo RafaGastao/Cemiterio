@@ -19,6 +19,16 @@ async function api(path, opts = {}){
     return j;
 }
 
+// Função para verificar se o usuário está logado
+function isUserLoggedIn() {
+    return currentUser !== null;
+}
+
+// Função para verificar se o usuário é administrador
+function isAdmin() {
+    return currentUser && currentUser.role === 'admin';
+}
+
 // API helpers (Original)
 const login = (username, password) => api('login', { method: 'POST', body: JSON.stringify({ username, password }) });
 const getCatalog = () => api('catalogo');
@@ -86,6 +96,32 @@ async function deleteUser(userId) {
 // Função para excluir um setor
 async function deleteSetor(setorId) {
     return api(`setores/${setorId}`, { method: 'DELETE' });
+}
+
+// Função para associar um falecido a um usuário
+async function associateFalecidoToUser(falecidoId, userId) {
+    return api(`falecidos/${falecidoId}/associar`, {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId })
+    });
+}
+
+// Função para obter os falecidos associados a um usuário
+async function getFalecidosByUser(userId) {
+    return api(`usuarios/${userId}/falecidos`);
+}
+
+// Função para obter pedidos
+async function getPedidos() {
+    return api('pedidos');
+}
+
+// Função para aprovar ou rejeitar um pedido
+async function updatePedidoAprovacao(pedidoId, aprovado) {
+    return api(`pedidos/${pedidoId}/aprovar`, {
+        method: 'PUT',
+        body: JSON.stringify({ aprovado })
+    });
 }
 
 // DOM helpers
@@ -188,9 +224,13 @@ function renderFalecidos(){
         <div class="card">
             <h2>Gerenciar Falecidos</h2>
             <div id="falecidosList">Carregando...</div>
-            <div class="footer-actions">
-                <button class="btn btn-primary" data-route="new-falecido">Adicionar Falecido</button>
-            </div>
+            ${
+                currentUser?.role === 'admin'
+                    ? `<div class="footer-actions">
+                           <button class="btn btn-primary" data-route="new-falecido">Adicionar Falecido</button>
+                       </div>`
+                    : ''
+            }
         </div>`;
 }
 
@@ -335,6 +375,15 @@ function renderHome() {
             <p><strong>Entre e descubra como podemos ajudar!</strong></p>
         </div>
     `;
+}
+
+// Função para renderizar a lista de pedidos
+function renderPedidos() {
+    return `
+        <div class="card">
+            <h2>Pedidos Realizados</h2>
+            <div id="pedidosList">Carregando...</div>
+        </div>`;
 }
 
 // ------------------------------------
@@ -546,55 +595,85 @@ async function bindSetores(container){
 async function bindFalecidos(container) {
     const list = container.querySelector('#falecidosList');
     if (!list) return;
+}
+
+async function bindPedidos(container) {
+    const list = container.querySelector('#pedidosList');
+    if (!list) return;
+
+    // Verifique se o usuário está logado
+    if (!isUserLoggedIn()) {
+        list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os pedidos.</p>';
+        return;
+    }
+    // Verifique se o usuário está logado
+    if (!currentUser) {
+        list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os falecidos.</p>';
+        return;
+    }
+
     try {
         const falecidos = await getFalecidos();
         let html = falecidos.map(f => `
             <div class="list-item falecido-item">
                 <div>
                     <strong>${f.name}</strong> (Nasc: ${f.anoNascimento} - Morte: ${f.anoMorte})<br>
-                    <small>Setor: ${f.setor || 'Não atribuído'}, Vaga: ${f.vaga || 'N/A'}</small>
+                    <small>Setor: ${f.setor_nome || 'Não atribuído'}, Vaga: ${f.vaga || 'N/A'}</small><br>
+                    <small>Planos: ${f.planos || 'Nenhum'}</small><br>
+                    <small>Usuários Associados: ${f.usuarios_associados || 'Nenhum'}</small>
                 </div>
-                <div>
-                    <button class="btn btn-ghost" data-edit="${f.id}">Editar</button>
-                    <button class="btn btn-danger" data-delete="${f.id}">Excluir</button>
+                <div class="actions">
+                    ${currentUser?.role === 'admin' ? `
+                        <button class="btn btn-ghost" data-edit="${f.id}">Editar</button>
+                        <button class="btn btn-danger" data-delete="${f.id}">Excluir</button>
+                        <button class="btn btn-primary" data-associate="${f.id}">Associar</button>
+                    ` : ''}
                 </div>
             </div>
         `).join('');
         list.innerHTML = html;
 
-        // Adicione o evento de clique para o botão "Adicionar Falecido"
-        const addButton = container.querySelector('button[data-route="new-falecido"]');
-        if (addButton) {
-            addButton.onclick = () => {
-                location.hash = '#new-falecido';
-                render();
-            };
-        }
+        // Bind para ações de administrador
+        if (currentUser?.role === 'admin') {
+            list.querySelectorAll('[data-edit]').forEach(btn => {
+                btn.onclick = () => {
+                    const falecidoId = btn.dataset.edit;
+                    renderEditFalecido(falecidoId);
+                };
+            });
 
-        // Adicione o evento de clique para o botão "Editar"
-        list.querySelectorAll('[data-edit]').forEach(btn => {
-            btn.onclick = () => {
-                const falecidoId = btn.dataset.edit;
-                renderEditFalecido(falecidoId);
-            };
-        });
-
-        // Adicione o evento de clique para o botão "Excluir"
-        list.querySelectorAll('[data-delete]').forEach(btn => {
-            btn.onclick = async () => {
-                const falecidoId = btn.dataset.delete;
-                const confirmDelete = confirm('Tem certeza de que deseja excluir este registro? Esta ação não pode ser desfeita.');
-                if (confirmDelete) {
-                    try {
-                        await deleteFalecido(falecidoId);
-                        alert('Registro excluído com sucesso!');
-                        render();
-                    } catch (e) {
-                        alert('Erro ao excluir registro: ' + e.message);
+            list.querySelectorAll('[data-delete]').forEach(btn => {
+                btn.onclick = async () => {
+                    const falecidoId = btn.dataset.delete;
+                    const confirmDelete = confirm('Tem certeza de que deseja excluir este registro?');
+                    if (confirmDelete) {
+                        try {
+                            await deleteFalecido(falecidoId);
+                            alert('Registro excluído com sucesso!');
+                            render();
+                        } catch (e) {
+                            alert('Erro ao excluir registro: ' + e.message);
+                        }
                     }
-                }
-            };
-        });
+                };
+            });
+
+            list.querySelectorAll('[data-associate]').forEach(btn => {
+                btn.onclick = async () => {
+                    const falecidoId = btn.dataset.associate;
+                    const userId = prompt('Informe o ID do usuário para associar:');
+                    if (userId) {
+                        try {
+                            await associateFalecidoToUser(falecidoId, userId);
+                            alert('Falecido associado ao usuário com sucesso!');
+                            render();
+                        } catch (e) {
+                            alert('Erro ao associar falecido: ' + e.message);
+                        }
+                    }
+                };
+            });
+        }
     } catch (e) {
         list.innerHTML = '<p style="color:red">Erro ao carregar falecidos</p>';
     }
@@ -654,6 +733,59 @@ async function bindOrders(container){
         `).join('');
         list.innerHTML = html;
     }catch(e){
+        list.innerHTML = '<p style="color:red">Erro ao carregar pedidos</p>';
+    }
+}
+
+async function bindPedidos(container) {
+    const list = container.querySelector('#pedidosList');
+    if (!list) return;
+
+    try {
+        const pedidos = await getPedidos();
+        let html = pedidos.map(p => `
+            <div class="list-item pedido-item">
+                <div>
+                    <strong>Pedido #${p.id}</strong> (Total: R$ ${Number(p.total).toFixed(2)})<br>
+                    <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small><br>
+                    <small>Aprovado: ${p.aprovado ? 'Sim' : 'Não'}</small><br>
+                    ${currentUser?.role === 'admin' ? `
+                        <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
+                        <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+        list.innerHTML = html;
+
+        if (currentUser?.role === 'admin') {
+            list.querySelectorAll('[data-aprovar]').forEach(btn => {
+                btn.onclick = async () => {
+                    const pedidoId = btn.dataset.aprovar;
+                    try {
+                        await updatePedidoAprovacao(pedidoId, true);
+                        alert('Pedido aprovado com sucesso!');
+                        render();
+                    } catch (e) {
+                        alert('Erro ao aprovar pedido: ' + e.message);
+                    }
+                };
+            });
+
+            list.querySelectorAll('[data-rejeitar]').forEach(btn => {
+                btn.onclick = async () => {
+                    const pedidoId = btn.dataset.rejeitar;
+                    try {
+                        await updatePedidoAprovacao(pedidoId, false);
+                        alert('Pedido rejeitado com sucesso!');
+                        render();
+                    } catch (e) {
+                        alert('Erro ao rejeitar pedido: ' + e.message);
+                    }
+                };
+            });
+        }
+    } catch (e) {
         list.innerHTML = '<p style="color:red">Erro ao carregar pedidos</p>';
     }
 }
@@ -1069,14 +1201,23 @@ function render(){
     const route = (location.hash.replace(/^#/,'') || 'home').split('/')[0];
 
     const isAdmin = currentUser && currentUser.role === 'admin';
-    const isManagementRoute = ['users', 'sectors', 'dead', 'orders', 'finance', 'new-user', 'new-setor', 'new-falecido', 'new-financeiro','setor-vagas'].includes(route);
+    const isVisitor = currentUser && currentUser.role === 'visitante';
+    const isManagementRoute = ['users', 'sectors', 'orders', 'finance', 'new-user', 'new-setor', 'new-falecido', 'new-financeiro', 'setor-vagas'].includes(route);
 
+    // Bloquear rotas de gerenciamento para visitantes
     if (isManagementRoute && !isAdmin) {
         location.hash = '#access-denied';
         app.innerHTML = renderAccessDenied();
         return;
     }
-    
+
+    // Permitir visitantes acessarem apenas a rota de falecidos
+    if (route === 'falecidos' || route === 'dead') {
+        app.innerHTML = renderFalecidos();
+        setTimeout(() => bindFalecidos(app), 0);
+        return;
+    }
+
     // ROTAS DE CRIAÇÃO (NOVAS)
     if(route === 'new-user'){ app.innerHTML = renderNewUser(); setTimeout(()=>bindNewUser(app),0); return; }
     if(route === 'new-setor'){ app.innerHTML = renderNewSetor(); setTimeout(()=>bindNewSetor(app),0); return; }
@@ -1089,6 +1230,7 @@ function render(){
     if(route === 'falecidos' || route === 'dead'){ app.innerHTML = renderFalecidos(); setTimeout(()=>bindFalecidos(app),0); return; }
     if(route === 'orders'){ app.innerHTML = renderOrders(); setTimeout(()=>bindOrders(app),0); return; }
     if(route === 'financeiro' || route=== 'finance'){ app.innerHTML = renderFinanceiro(); setTimeout(()=>bindFinanceiro(app),0); return; }
+    if(route === 'pedidos'){ app.innerHTML = renderPedidos(); setTimeout(()=>bindPedidos(app),0); return; }
     
     // ROTAS DE COMPRA (ORIGINAIS)
     if(route === 'login'){ app.innerHTML = renderLogin(); setTimeout(()=>bindLogin(app),0); return; }
@@ -1135,3 +1277,27 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('hashchange', render);
     render();
 });
+
+// Função para associar um plano a um falecido
+async function associatePlanoToFalecido(falecidoId, planoId) {
+    return api(`falecidos/${falecidoId}/associar-plano`, {
+        method: 'POST',
+        body: JSON.stringify({ plano_id: planoId })
+    });
+}
+
+// Função para obter os planos associados a um falecido
+async function getPlanosByFalecido(falecidoId) {
+    return api(`falecidos/${falecidoId}/planos`);
+}
+
+/**
+ * Função para aplicar hash e salt ao CPF antes de enviá-lo ao backend.
+ * @param {string} cpf - O CPF a ser protegido.
+ * @returns {string} - O CPF protegido com hash e salt.
+ */
+function hashCPF(cpf) {
+    const salt = CryptoJS.lib.WordArray.random(16); // Gera um salt aleatório
+    const hash = CryptoJS.PBKDF2(cpf, salt, { keySize: 256 / 32, iterations: 1000 });
+    return `${salt.toString(CryptoJS.enc.Hex)}:${hash.toString(CryptoJS.enc.Hex)}`;
+}

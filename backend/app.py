@@ -2,7 +2,7 @@ import mysql.connector
 import hashlib
 import os
 
-from flask import Flask, jsonify, request 
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS 
 
 from mysql.connector import Error
@@ -47,6 +47,36 @@ def verify_password(password, stored_hash):
     salt = bytes.fromhex(salt)
     hash_obj = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
     return hash_obj.hex() == hash_value
+
+# Helper: Hash and salt sensitive data (e.g., CPF)
+def hash_sensitive_data(data):
+    salt = os.urandom(16)  # Generate a 16-byte salt
+    hash_obj = hashlib.pbkdf2_hmac('sha256', data.encode(), salt, 100000)
+    return salt.hex() + ':' + hash_obj.hex()
+
+# Middleware para autenticação e obtenção do usuário atual
+@app.before_request
+def authenticate_user():
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not token:
+        g.current_user = None
+        return
+    try:
+        decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        user_id = decoded.get('user_id')
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT id, name, role FROM usuarios WHERE id = %s', (user_id,))
+        user = cur.fetchone()
+        if user:
+            g.current_user = dict(zip(['id', 'name', 'role'], user))
+        else:
+            g.current_user = None
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Authentication error: {e}")
+        g.current_user = None
 
 # --- NEW: API Root Status Route ---
 @app.route('/api', methods=['GET'])
@@ -141,8 +171,7 @@ def usuarios_single(uid):
         hashed_password = generate_password_hash(p.get('password')) if p.get('password') else None
         cur.execute('UPDATE usuarios SET name=%s, username=%s, email=%s, password=%s, role=%s WHERE id=%s',
                     (p.get('name'), p.get('username'), p.get('email'), hashed_password, p.get('role'), uid))
-        conn.commit(); cur.close(); conn.close();
-        return jsonify({'ok':True})
+        conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
     if request.method == 'DELETE':
         cur.execute('DELETE FROM usuarios WHERE id=%s', (uid,))
         conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
@@ -256,41 +285,51 @@ def ocupar_vaga(setor_id):
 # --- Falecidos CRUD ---
 @app.route('/api/falecidos', methods=['GET', 'POST'])
 def falecidos_collection():
+    """Lista falecidos com base no nível do usuário, incluindo nome do setor e planos associados."""
     conn = get_db_connection()
     if not conn:
         return jsonify([]), 500
     cur = conn.cursor()
-    if request.method == 'GET':
-        cur.execute('SELECT id, name, anoNascimento, anoMorte, setor, vaga FROM falecidos')
+
+    try:
+        if g.current_user and g.current_user['role'] == 'visitante':
+            # Visitantes só podem ver falecidos associados a eles
+            cur.execute("""
+                SELECT f.id, f.name, f.anoNascimento, f.anoMorte, s.name AS setor_nome, f.vaga,
+                       COALESCE(GROUP_CONCAT(DISTINCT p.nome SEPARATOR ', '), 'Nenhum') AS planos,
+                       COALESCE(GROUP_CONCAT(DISTINCT u.name SEPARATOR ', '), 'Nenhum') AS usuarios_associados
+                FROM falecidos f
+                INNER JOIN usuarios_falecidos uf ON f.id = uf.falecido_id
+                LEFT JOIN usuarios u ON uf.user_id = u.id
+                LEFT JOIN setores s ON f.setor = s.id
+                LEFT JOIN falecidos_planos fp ON f.id = fp.falecido_id
+                LEFT JOIN catalogo p ON fp.plano_id = p.id
+                WHERE uf.user_id = %s
+                GROUP BY f.id
+            """, (g.current_user['id'],))
+        else:
+            # Administradores podem ver todos os falecidos
+            cur.execute("""
+                SELECT f.id, f.name, f.anoNascimento, f.anoMorte, s.name AS setor_nome, f.vaga,
+                       COALESCE(GROUP_CONCAT(DISTINCT p.nome SEPARATOR ', '), 'Nenhum') AS planos,
+                       COALESCE(GROUP_CONCAT(DISTINCT u.name SEPARATOR ', '), 'Nenhum') AS usuarios_associados
+                FROM falecidos f
+                LEFT JOIN usuarios_falecidos uf ON f.id = uf.falecido_id
+                LEFT JOIN usuarios u ON uf.user_id = u.id
+                LEFT JOIN setores s ON f.setor = s.id
+                LEFT JOIN falecidos_planos fp ON f.id = fp.falecido_id
+                LEFT JOIN catalogo p ON fp.plano_id = p.id
+                GROUP BY f.id
+            """)
+
         data = rows_to_dicts(cur)
-        cur.close()
-        conn.close()
         return jsonify(data)
-    else:
-        p = request.json or {}
-        setor = p.get('setor')
-        vaga = p.get('vaga')
-
-        # Verificar se a vaga está disponível
-        cur.execute(
-            'SELECT COUNT(*) FROM falecidos WHERE setor = %s AND vaga = %s',
-            (setor, vaga)
-        )
-        if cur.fetchone()[0] > 0:
-            cur.close()
-            conn.close()
-            return jsonify({'error': 'A vaga selecionada já está ocupada.'}), 400
-
-        # Inserir o falecido e ocupar a vaga
-        cur.execute(
-            'INSERT INTO falecidos (name, anoNascimento, anoMorte, setor, vaga) VALUES (%s, %s, %s, %s, %s)',
-            (p.get('name'), p.get('anoNascimento'), p.get('anoMorte'), setor, vaga)
-        )
-        conn.commit()
-        nid = cur.lastrowid
+    except Exception as e:
+        print(f"Error fetching falecidos: {e}")
+        return jsonify({'error': 'internal server error'}), 500
+    finally:
         cur.close()
         conn.close()
-        return jsonify({'id': nid}), 201
 
 @app.route('/api/falecidos/<int:fid>', methods=['GET','PUT','DELETE'])
 def falecidos_single(fid):
@@ -339,6 +378,125 @@ def atribuir_vaga(fid):
         return jsonify({'message': 'Vaga atribuída com sucesso'}), 200
     except Exception as e:
         print(f"Error assigning vaga: {e}")
+        return jsonify({'error': 'internal server error'}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+# --- Associar falecidos a usuários ---
+@app.route('/api/falecidos/<int:fid>/associar', methods=['POST'])
+def associar_falecido(fid):
+    """Associa um falecido a um usuário."""
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'db connection error'}), 500
+    cur = conn.cursor()
+    try:
+        payload = request.json or {}
+        user_id = payload.get('user_id')
+
+        if not user_id:
+            return jsonify({'error': 'user_id é obrigatório'}), 400
+
+        # Verificar se o falecido existe
+        cur.execute('SELECT id FROM falecidos WHERE id = %s', (fid,))
+        if not cur.fetchone():
+            return jsonify({'error': 'Falecido não encontrado'}), 404
+
+        # Verificar se a associação já existe
+        cur.execute('SELECT COUNT(*) FROM usuarios_falecidos WHERE user_id = %s AND falecido_id = %s', (user_id, fid))
+        if cur.fetchone()[0] > 0:
+            return jsonify({'error': 'Associação já existe'}), 400
+
+        # Criar a associação
+        cur.execute('INSERT INTO usuarios_falecidos (user_id, falecido_id) VALUES (%s, %s)', (user_id, fid))
+        conn.commit()
+        return jsonify({'message': 'Falecido associado ao usuário com sucesso'}), 201
+    except Exception as e:
+        print(f"Error associating falecido: {e}")
+        return jsonify({'error': 'internal server error'}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+# --- Listar falecidos associados a um usuário ---
+@app.route('/api/usuarios/<int:user_id>/falecidos', methods=['GET'])
+def listar_falecidos_usuario(user_id):
+    """Lista os falecidos associados a um usuário."""
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'db connection error'}), 500
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT f.id, f.name, f.anoNascimento, f.anoMorte, f.setor, f.vaga
+            FROM falecidos f
+            INNER JOIN usuarios_falecidos uf ON f.id = uf.falecido_id
+            WHERE uf.user_id = %s
+        """, (user_id,))
+        falecidos = rows_to_dicts(cur)
+        return jsonify(falecidos)
+    except Exception as e:
+        print(f"Error listing falecidos for user: {e}")
+        return jsonify({'error': 'internal server error'}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+# --- Associar falecidos a planos ---
+@app.route('/api/falecidos/<int:fid>/associar-plano', methods=['POST'])
+def associar_plano(fid):
+    """Associa um falecido a um plano."""
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'db connection error'}), 500
+    cur = conn.cursor()
+    try:
+        payload = request.json or {}
+        plano_id = payload.get('plano_id')
+
+        if not plano_id:
+            return jsonify({'error': 'plano_id é obrigatório'}), 400
+
+        # Verificar se o falecido existe
+        cur.execute('SELECT id FROM falecidos WHERE id = %s', (fid,))
+        if not cur.fetchone():
+            return jsonify({'error': 'Falecido não encontrado'}), 404
+
+        # Verificar se o plano existe
+        cur.execute('SELECT id FROM catalogo WHERE id = %s', (plano_id,))
+        if not cur.fetchone():
+            return jsonify({'error': 'Plano não encontrado'}), 404
+
+        # Criar a associação
+        cur.execute('INSERT INTO falecidos_planos (falecido_id, plano_id) VALUES (%s, %s)', (fid, plano_id))
+        conn.commit()
+        return jsonify({'message': 'Plano associado ao falecido com sucesso'}), 201
+    except Exception as e:
+        print(f"Error associating plano: {e}")
+        return jsonify({'error': 'internal server error'}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/api/falecidos/<int:fid>/planos', methods=['GET'])
+def listar_planos_falecido(fid):
+    """Lista os planos associados a um falecido."""
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'db connection error'}), 500
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT c.id, c.nome, c.descricao, c.preco
+            FROM catalogo c
+            INNER JOIN falecidos_planos fp ON c.id = fp.plano_id
+            WHERE fp.falecido_id = %s
+        """, (fid,))
+        planos = rows_to_dicts(cur)
+        return jsonify(planos)
+    except Exception as e:
+        print(f"Error listing planos for falecido: {e}")
         return jsonify({'error': 'internal server error'}), 500
     finally:
         cur.close()
@@ -407,24 +565,97 @@ def carrinho_item(item_id):
 
 
 # --- Pedidos (checkout) ---
-@app.route('/api/pedidos', methods=['POST','GET'])
+@app.route('/api/pedidos', methods=['POST'])
 def pedidos_collection():
-    conn = get_db_connection();
-    if not conn: return jsonify({'error':'db'}),500
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'db'}), 500
     cur = conn.cursor()
     if request.method == 'POST':
         p = request.json or {}
-        cur.execute('INSERT INTO pedidos (user_id, nome, cpf, email, telefone, forma_pagamento, total, status, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-                    (p.get('user_id'), p.get('nome'), p.get('cpf'), p.get('email'), p.get('telefone'), p.get('forma_pagamento'), p.get('total'), 'pendente', datetime.datetime.utcnow()))
-        pid = cur.lastrowid
-        # inserir itens
-        for it in p.get('itens',[]):
-            cur.execute('INSERT INTO pedido_itens (pedido_id, produto_id, quantidade, preco) VALUES (%s,%s,%s,%s)', (pid, it.get('produto_id'), it.get('quantidade'), it.get('preco')))
-        conn.commit(); cur.close(); conn.close();
-        return jsonify({'id':pid}),201
-    else:
-        cur.execute('SELECT id, user_id, nome, cpf, email, telefone, forma_pagamento, total, status, created_at FROM pedidos')
-        data = rows_to_dicts(cur); cur.close(); conn.close(); return jsonify(data)
+        try:
+            # Hash and salt the CPF
+            hashed_cpf = hash_sensitive_data(p.get('cpf'))
+
+            # Insert the order
+            cur.execute(
+                'INSERT INTO pedidos (user_id, nome, cpf, email, telefone, forma_pagamento, total, status, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                (p.get('user_id'), p.get('nome'), hashed_cpf, p.get('email'), p.get('telefone'), p.get('forma_pagamento'), p.get('total'), 'pendente', datetime.datetime.utcnow())
+            )
+            pid = cur.lastrowid
+
+            # Insert order items
+            for it in p.get('itens', []):
+                cur.execute(
+                    'INSERT INTO pedido_itens (pedido_id, produto_id, quantidade, preco) VALUES (%s,%s,%s,%s)',
+                    (pid, it.get('produto_id'), it.get('quantidade'), it.get('preco'))
+                )
+            conn.commit()
+            return jsonify({'id': pid}), 201
+        except Exception as e:
+            print(f"Error creating order: {e}")
+            return jsonify({'error': 'internal server error'}), 500
+        finally:
+            cur.close()
+            conn.close()
+
+@app.route('/api/pedidos', methods=['GET'])
+def listar_pedidos():
+    """Lista pedidos realizados. Admins veem todos os pedidos, usuários veem apenas os próprios."""
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'db connection error'}), 500
+    cur = conn.cursor()
+    try:
+        if g.current_user and g.current_user['role'] == 'admin':
+            # Admins podem ver todos os pedidos
+            cur.execute("""
+                SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at
+                FROM pedidos p
+                LEFT JOIN usuarios u ON p.user_id = u.id
+            """)
+        else:
+            # Usuários comuns veem apenas os próprios pedidos
+            cur.execute("""
+                SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at
+                FROM pedidos p
+                LEFT JOIN usuarios u ON p.user_id = u.id
+                WHERE p.user_id = %s
+            """, (g.current_user['id'],))
+        pedidos = rows_to_dicts(cur)
+        return jsonify(pedidos)
+    except Exception as e:
+        print(f"Error fetching pedidos: {e}")
+        return jsonify({'error': 'internal server error'}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route('/api/pedidos/<int:pedido_id>/aprovar', methods=['PUT'])
+def aprovar_pedido(pedido_id):
+    """Permite que o administrador aprove ou rejeite um pedido."""
+    if not g.current_user or g.current_user['role'] != 'admin':
+        return jsonify({'error': 'Acesso negado'}), 403
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'db connection error'}), 500
+    cur = conn.cursor()
+    try:
+        payload = request.json or {}
+        aprovado = payload.get('aprovado')  # True ou False
+        if aprovado is None:
+            return jsonify({'error': 'Campo "aprovado" é obrigatório'}), 400
+
+        cur.execute('UPDATE pedidos SET aprovado = %s WHERE id = %s', (aprovado, pedido_id))
+        conn.commit()
+        return jsonify({'message': 'Status de aprovação atualizado com sucesso'}), 200
+    except Exception as e:
+        print(f"Error updating approval status: {e}")
+        return jsonify({'error': 'internal server error'}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 
 # --- Financeiro ---
