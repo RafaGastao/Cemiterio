@@ -3,7 +3,7 @@
  * - Frontend talks to backend via API_BASE
  */
 
-const API_BASE = 'https://sua-url-do-backend.onrender.com/api';
+const API_BASE = 'https://cemiterio.onrender.com/';
 
 let token = localStorage.getItem('cem_token') || null;
 let currentUser = null; // populated after successful login
