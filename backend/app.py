@@ -46,10 +46,15 @@ def generate_password_hash(password):
 
 # Helper: Verify password hash
 def verify_password(password, stored_hash):
-    salt, hash_value = stored_hash.split(':')
-    salt = bytes.fromhex(salt)
-    hash_obj = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
-    return hash_obj.hex() == hash_value
+    try:
+        salt, hash_value = stored_hash.split(':')
+        salt = bytes.fromhex(salt)
+        hash_obj = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
+        return hash_obj.hex() == hash_value
+    except (ValueError, IndexError):
+        # Lida com casos onde o split falha ou o hash não está no formato esperado.
+        # Isso previne o crash da aplicação por senhas em formato antigo/inválido.
+        return False
 
 # Helper: Hash and salt sensitive data (e.g., CPF)
 def hash_sensitive_data(data):
@@ -276,7 +281,7 @@ def ocupar_vaga(setor_id):
             FROM setores s
             LEFT JOIN falecidos f ON s.id = f.setor
             WHERE s.id = %s
-            GROUP BY s.vagas
+            GROUP BY s.id
         """, (setor_id,))
         row = cur.fetchone()
         if not row:
@@ -388,7 +393,7 @@ def atribuir_vaga(fid):
 
         # Verificar se a vaga já está ocupada
         cur.execute("""
-            SELECT COUNT(*) FROM falecidos WHERE setor = %s AND vaga = %s
+            SELECT COUNT(*)::int FROM falecidos WHERE setor = %s AND vaga = %s
         """, (setor, vaga))
         if cur.fetchone()['count'] > 0:
             return jsonify({'error': 'Vaga já está ocupada'}), 400
@@ -427,7 +432,7 @@ def associar_falecido(fid):
             return jsonify({'error': 'Falecido não encontrado'}), 404
 
         # Verificar se a associação já existe
-        cur.execute('SELECT COUNT(*) FROM usuarios_falecidos WHERE user_id = %s AND falecido_id = %s', (user_id, fid))
+        cur.execute('SELECT COUNT(*)::int FROM usuarios_falecidos WHERE user_id = %s AND falecido_id = %s', (user_id, fid))
         if cur.fetchone()['count'] > 0:
             return jsonify({'error': 'Associação já existe'}), 400
 

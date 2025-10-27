@@ -1,9 +1,10 @@
-# Configurações de conexão com o banco de dados MySQL
+# Configurações de conexão com o banco de dados para desenvolvimento LOCAL.
+# As credenciais de produção devem ser configuradas como Environment Variables no Render.
 DB_CONFIG = {
-    'host': 'dpg-d3vurkp5pdvs7391f250-a',
-    'user': 'cemiterio_db_lyl7_user',
-    'password': 'BYrFAlh8Oz4gWT2mwj3zo0GqB5iq1mNO',
-    'database': 'cemiterio_db_lyl7',
+    'host': 'localhost',
+    'user': 'postgres',
+    'password': 'your_local_password',
+    'database': 'cemiterio_db',
     'port': 5432
 }
 
