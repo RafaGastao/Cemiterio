@@ -607,6 +607,14 @@ async function bindFalecidos(container) {
     const list = container.querySelector('#falecidosList');
     if (!list) return;
 
+    // Bind para o botão "Adicionar Falecido" (deve ser feito aqui, fora do try/catch da lista)
+    if (currentUser?.role === 'admin') {
+        const newBtn = container.querySelector('button[data-route="new-falecido"]');
+        if (newBtn) {
+            newBtn.onclick = () => { location.hash = '#new-falecido'; render(); };
+        }
+    }
+
     // Verifique se o usuário está logado
     if (!isUserLoggedIn()) {
         list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os falecidos.</p>';
