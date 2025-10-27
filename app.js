@@ -3,7 +3,7 @@
  * - Frontend talks to backend via API_BASE
  */
 
-const API_BASE = 'https://cemiterio.onrender.com/';
+const API_BASE = 'https://cemiterio-0elv.onrender.com';
 
 let token = localStorage.getItem('cem_token') || null;
 let currentUser = null; // populated after successful login
