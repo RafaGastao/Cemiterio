@@ -10,7 +10,9 @@ import jwt
 import datetime
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": ["http://127.0.0.1:5500", "http://localhost:5500", "URL_DO_SEU_FRONTEND_ONLINE"]}})
+# Modificado para usar variável de ambiente para a URL do frontend e ser mais específico na rota
+frontend_url = os.getenv('FRONTEND_URL', 'http://127.0.0.1:5500')
+CORS(app, resources={r"/api/*": {"origins": [frontend_url, "http://localhost:5500"]}})
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'muda_essa_chave_para_producao')
 
 
@@ -565,12 +567,13 @@ def carrinho_item(item_id):
 
 
 # --- Pedidos (checkout) ---
-@app.route('/api/pedidos', methods=['POST'])
+@app.route('/api/pedidos', methods=['GET', 'POST'])
 def pedidos_collection():
     conn = get_db_connection()
     if not conn:
         return jsonify({'error': 'db'}), 500
     cur = conn.cursor()
+    
     if request.method == 'POST':
         p = request.json or {}
         try:
@@ -599,37 +602,39 @@ def pedidos_collection():
             cur.close()
             conn.close()
 
-@app.route('/api/pedidos', methods=['GET'])
-def listar_pedidos():
-    """Lista pedidos realizados. Admins veem todos os pedidos, usuários veem apenas os próprios."""
-    conn = get_db_connection()
-    if not conn:
-        return jsonify({'error': 'db connection error'}), 500
-    cur = conn.cursor()
-    try:
-        if g.current_user and g.current_user['role'] == 'admin':
-            # Admins podem ver todos os pedidos
-            cur.execute("""
-                SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at
-                FROM pedidos p
-                LEFT JOIN usuarios u ON p.user_id = u.id
-            """)
-        else:
-            # Usuários comuns veem apenas os próprios pedidos
-            cur.execute("""
-                SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at
-                FROM pedidos p
-                LEFT JOIN usuarios u ON p.user_id = u.id
-                WHERE p.user_id = %s
-            """, (g.current_user['id'],))
-        pedidos = rows_to_dicts(cur)
-        return jsonify(pedidos)
-    except Exception as e:
-        print(f"Error fetching pedidos: {e}")
-        return jsonify({'error': 'internal server error'}), 500
-    finally:
-        cur.close()
-        conn.close()
+    if request.method == 'GET':
+        """Lista pedidos realizados. Admins veem todos os pedidos, usuários veem apenas os próprios."""
+        try:
+            if g.current_user and g.current_user['role'] == 'admin':
+                # Admins podem ver todos os pedidos
+                cur.execute("""
+                    SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at, p.aprovado
+                    FROM pedidos p
+                    LEFT JOIN usuarios u ON p.user_id = u.id
+                """)
+            elif g.current_user:
+                # Usuários comuns veem apenas os próprios pedidos
+                cur.execute("""
+                    SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at, p.aprovado
+                    FROM pedidos p
+                    LEFT JOIN usuarios u ON p.user_id = u.id
+                    WHERE p.user_id = %s
+                """, (g.current_user['id'],))
+            else:
+                # Se não estiver logado, retorna lista vazia ou erro
+                cur.close()
+                conn.close()
+                return jsonify([]), 200
+
+            pedidos = rows_to_dicts(cur)
+            return jsonify(pedidos)
+        except Exception as e:
+            print(f"Error fetching pedidos: {e}")
+            return jsonify({'error': 'internal server error'}), 500
+        finally:
+            cur.close()
+            conn.close()
+
 
 @app.route('/api/pedidos/<int:pedido_id>/aprovar', methods=['PUT'])
 def aprovar_pedido(pedido_id):

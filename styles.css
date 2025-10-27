@@ -155,9 +155,23 @@ footer {
   padding: 0.5rem 1rem;
   border-radius: 8px;
   cursor: pointer;
+  font-size: 0.95rem;
+  transition: background 0.2s, transform 0.1s;
+}
 
-/* Cards que estão dentro da grid (produtos) devem ter visual mais compacto
-   e altura uniforme para alinhar botões e conteúdo */
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: #1e5bbf; }
+
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: #c62c38; }
+
+.btn-ghost { background: transparent; border: 1px solid #ccc; }
+.btn-ghost:hover { background: #f0f0f0; }
+
 .card .grid > .card {
   padding: 1rem;
   border-radius: 10px;
@@ -175,7 +189,6 @@ footer {
 
 .card .grid > .card p { color: var(--muted); margin: 0 0 0.75rem 0; min-height: 2.4rem; /* força espaço para 2 linhas de descrição */ }
 
-/* Força os botões de ação a ficarem no final do card do produto */
 .card .grid > .card .btn { margin-top: auto; align-self: flex-start; }
 
 /* Compacta o conteúdo interno do card e força alinhamento dos elementos */
@@ -191,24 +204,6 @@ footer {
 
 /* Ajustes menores para aparência */
 .card > .grid { margin-bottom: 0.5rem; }
-
-/* Melhor espaçamento no rodapé das páginas */
-  font-size: 0.95rem;
-  transition: background 0.2s, transform 0.1s;
-}
-
-.btn:hover {
-  transform: translateY(-2px);
-}
-
-.btn-primary { background: var(--primary); color: #fff; }
-.btn-primary:hover { background: #1e5bbf; }
-
-.btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:hover { background: #c62c38; }
-
-.btn-ghost { background: transparent; border: 1px solid #ccc; }
-.btn-ghost:hover { background: #f0f0f0; }
 
 .input, select, textarea {
   width: 100%;

@@ -3,7 +3,7 @@
  * - Frontend talks to backend via API_BASE
  */
 
-const API_BASE = 'https://cemiterio-0elv.onrender.com';
+const API_BASE = 'https://cemiterio-0elv.onrender.com/api';
 
 let token = localStorage.getItem('cem_token') || null;
 let currentUser = null; // populated after successful login
@@ -696,46 +696,57 @@ async function bindPedidos(container) {
 
     try {
         const pedidos = await getPedidos();
-        let html = pedidos.map(p => `
+        if (!pedidos || pedidos.length === 0) {
+            list.innerHTML = '<p>Nenhum pedido encontrado.</p>';
+            return;
+        }
+
+        let html = pedidos.map(p => {
+            let statusAprovacao = 'Pendente';
+            if (p.aprovado === 1) {
+                statusAprovacao = 'Aprovado';
+            } else if (p.aprovado === 0) {
+                statusAprovacao = 'Rejeitado';
+            }
+
+            return `
             <div class="list-item pedido-item">
                 <div>
                     <strong>Pedido #${p.id}</strong> (Total: R$ ${Number(p.total).toFixed(2)})<br>
                     <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small><br>
-                    <small>Aprovado: ${p.aprovado ? 'Sim' : 'Não'}</small><br>
-                    ${currentUser?.role === 'admin' ? `
-                        <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
-                        <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
+                    <small>Aprovação: ${statusAprovacao}</small><br>
+                    ${currentUser?.role === 'admin' && p.aprovado === null ? `
+                        <div class="actions">
+                            <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
+                            <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
+                        </div>
                     ` : ''}
                 </div>
             </div>
-        `).join('');
+        `}).join('');
         list.innerHTML = html;
 
         if (currentUser?.role === 'admin') {
+            const handleUpdate = async (pedidoId, isApproved, successMessage, errorMessage) => {
+                try {
+                    await updatePedidoAprovacao(pedidoId, isApproved);
+                    alert(successMessage);
+                    // Recarrega a view para refletir a mudança
+                    const currentHash = location.hash;
+                    location.hash = '';
+                    location.hash = currentHash;
+                    render();
+                } catch (e) {
+                    alert(`${errorMessage}: ${e.message}`);
+                }
+            };
+
             list.querySelectorAll('[data-aprovar]').forEach(btn => {
-                btn.onclick = async () => {
-                    const pedidoId = btn.dataset.aprovar;
-                    try {
-                        await updatePedidoAprovacao(pedidoId, true);
-                        alert('Pedido aprovado com sucesso!');
-                        render();
-                    } catch (e) {
-                        alert('Erro ao aprovar pedido: ' + e.message);
-                    }
-                };
+                btn.onclick = () => handleUpdate(btn.dataset.aprovar, true, 'Pedido aprovado com sucesso!', 'Erro ao aprovar pedido');
             });
 
             list.querySelectorAll('[data-rejeitar]').forEach(btn => {
-                btn.onclick = async () => {
-                    const pedidoId = btn.dataset.rejeitar;
-                    try {
-                        await updatePedidoAprovacao(pedidoId, false);
-                        alert('Pedido rejeitado com sucesso!');
-                        render();
-                    } catch (e) {
-                        alert('Erro ao rejeitar pedido: ' + e.message);
-                    }
-                };
+                btn.onclick = () => handleUpdate(btn.dataset.rejeitar, false, 'Pedido rejeitado com sucesso!', 'Erro ao rejeitar pedido');
             });
         }
     } catch (e) {
