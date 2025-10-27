@@ -6,23 +6,22 @@ from flask import Flask, jsonify, request, g
 from flask_cors import CORS 
 
 from mysql.connector import Error
-from config import DB_CONFIG
 import jwt 
 import datetime
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": ["http://127.0.0.1:5500", "http://localhost:5500"]}})
-app.config['SECRET_KEY'] = 'muda_essa_chave_para_producao'
+CORS(app, resources={r"/*": {"origins": ["http://127.0.0.1:5500", "http://localhost:5500", "URL_DO_SEU_FRONTEND_ONLINE"]}})
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'muda_essa_chave_para_producao')
 
 
 def get_db_connection():
     try:
         conn = mysql.connector.connect(
-            host=DB_CONFIG['host'],
-            user=DB_CONFIG['user'],
-            password=DB_CONFIG['password'],
-            database=DB_CONFIG['database'],
-            port=DB_CONFIG.get('port', 3306)
+            host=os.getenv('DB_HOST'),
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD'),
+            database=os.getenv('DB_DATABASE'),
+            port=int(os.getenv('DB_PORT', 3306))
         )
         return conn
     except Error as e:
@@ -74,6 +73,7 @@ def authenticate_user():
             g.current_user = None
         cur.close()
         conn.close()
+        print(f"Authenticated user: {g.current_user}")  # Adicione este log
     except Exception as e:
         print(f"Authentication error: {e}")
         g.current_user = None

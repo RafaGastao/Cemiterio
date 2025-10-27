@@ -3,7 +3,7 @@
  * - Frontend talks to backend via API_BASE
  */
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'https://sua-url-do-backend.onrender.com/api';
 
 let token = localStorage.getItem('cem_token') || null;
 let currentUser = null; // populated after successful login
@@ -138,7 +138,10 @@ function renderLogin(){
             <h2>Entrar</h2>
             <div class="form-row"><label>Usuário</label><input id="loginUser" class="input"/></div>
             <div class="form-row"><label>Senha</label><input id="loginPass" type="password" class="input"/></div>
-            <div class="footer-actions"><button id="doLogin" class="btn btn-primary">Entrar</button></div>
+            <div class="footer-actions">
+                <button id="goRegister" class="btn btn-ghost">Criar novo usuário</button>
+                <button id="doLogin" class="btn btn-primary">Entrar</button>
+            </div>
         </div>`;
 }
 
@@ -407,6 +410,14 @@ async function bindLogin(container){
             render();
         }catch(e){ alert('Erro: ' + e.message); }
     };
+
+    const registerBtn = el('goRegister');
+    if (registerBtn) {
+        registerBtn.onclick = () => {
+            location.hash = '#new-user';
+            render();
+        };
+    }
 }
 
 async function bindCatalog(container){
@@ -595,25 +606,20 @@ async function bindSetores(container){
 async function bindFalecidos(container) {
     const list = container.querySelector('#falecidosList');
     if (!list) return;
-}
-
-async function bindPedidos(container) {
-    const list = container.querySelector('#pedidosList');
-    if (!list) return;
 
     // Verifique se o usuário está logado
     if (!isUserLoggedIn()) {
-        list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os pedidos.</p>';
-        return;
-    }
-    // Verifique se o usuário está logado
-    if (!currentUser) {
         list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os falecidos.</p>';
         return;
     }
 
     try {
         const falecidos = await getFalecidos();
+        if (!falecidos || falecidos.length === 0) {
+            list.innerHTML = '<p>Nenhum falecido encontrado.</p>';
+            return;
+        }
+
         let html = falecidos.map(f => `
             <div class="list-item falecido-item">
                 <div>
@@ -645,8 +651,7 @@ async function bindPedidos(container) {
             list.querySelectorAll('[data-delete]').forEach(btn => {
                 btn.onclick = async () => {
                     const falecidoId = btn.dataset.delete;
-                    const confirmDelete = confirm('Tem certeza de que deseja excluir este registro?');
-                    if (confirmDelete) {
+                    if (confirm('Tem certeza de que deseja excluir este registro?')) {
                         try {
                             await deleteFalecido(falecidoId);
                             alert('Registro excluído com sucesso!');
@@ -675,7 +680,66 @@ async function bindPedidos(container) {
             });
         }
     } catch (e) {
-        list.innerHTML = '<p style="color:red">Erro ao carregar falecidos</p>';
+        list.innerHTML = `<p style="color:red">Erro ao carregar falecidos: ${e.message}</p>`;
+    }
+}
+
+async function bindPedidos(container) {
+    const list = container.querySelector('#pedidosList');
+    if (!list) return;
+
+    // Verifique se o usuário está logado
+    if (!isUserLoggedIn()) {
+        list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os pedidos.</p>';
+        return;
+    }
+
+    try {
+        const pedidos = await getPedidos();
+        let html = pedidos.map(p => `
+            <div class="list-item pedido-item">
+                <div>
+                    <strong>Pedido #${p.id}</strong> (Total: R$ ${Number(p.total).toFixed(2)})<br>
+                    <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small><br>
+                    <small>Aprovado: ${p.aprovado ? 'Sim' : 'Não'}</small><br>
+                    ${currentUser?.role === 'admin' ? `
+                        <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
+                        <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+        list.innerHTML = html;
+
+        if (currentUser?.role === 'admin') {
+            list.querySelectorAll('[data-aprovar]').forEach(btn => {
+                btn.onclick = async () => {
+                    const pedidoId = btn.dataset.aprovar;
+                    try {
+                        await updatePedidoAprovacao(pedidoId, true);
+                        alert('Pedido aprovado com sucesso!');
+                        render();
+                    } catch (e) {
+                        alert('Erro ao aprovar pedido: ' + e.message);
+                    }
+                };
+            });
+
+            list.querySelectorAll('[data-rejeitar]').forEach(btn => {
+                btn.onclick = async () => {
+                    const pedidoId = btn.dataset.rejeitar;
+                    try {
+                        await updatePedidoAprovacao(pedidoId, false);
+                        alert('Pedido rejeitado com sucesso!');
+                        render();
+                    } catch (e) {
+                        alert('Erro ao rejeitar pedido: ' + e.message);
+                    }
+                };
+            });
+        }
+    } catch (e) {
+        list.innerHTML = `<p style="color:red">Erro ao carregar pedidos: ${e.message}</p>`;
     }
 }
 
@@ -733,59 +797,6 @@ async function bindOrders(container){
         `).join('');
         list.innerHTML = html;
     }catch(e){
-        list.innerHTML = '<p style="color:red">Erro ao carregar pedidos</p>';
-    }
-}
-
-async function bindPedidos(container) {
-    const list = container.querySelector('#pedidosList');
-    if (!list) return;
-
-    try {
-        const pedidos = await getPedidos();
-        let html = pedidos.map(p => `
-            <div class="list-item pedido-item">
-                <div>
-                    <strong>Pedido #${p.id}</strong> (Total: R$ ${Number(p.total).toFixed(2)})<br>
-                    <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small><br>
-                    <small>Aprovado: ${p.aprovado ? 'Sim' : 'Não'}</small><br>
-                    ${currentUser?.role === 'admin' ? `
-                        <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
-                        <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
-                    ` : ''}
-                </div>
-            </div>
-        `).join('');
-        list.innerHTML = html;
-
-        if (currentUser?.role === 'admin') {
-            list.querySelectorAll('[data-aprovar]').forEach(btn => {
-                btn.onclick = async () => {
-                    const pedidoId = btn.dataset.aprovar;
-                    try {
-                        await updatePedidoAprovacao(pedidoId, true);
-                        alert('Pedido aprovado com sucesso!');
-                        render();
-                    } catch (e) {
-                        alert('Erro ao aprovar pedido: ' + e.message);
-                    }
-                };
-            });
-
-            list.querySelectorAll('[data-rejeitar]').forEach(btn => {
-                btn.onclick = async () => {
-                    const pedidoId = btn.dataset.rejeitar;
-                    try {
-                        await updatePedidoAprovacao(pedidoId, false);
-                        alert('Pedido rejeitado com sucesso!');
-                        render();
-                    } catch (e) {
-                        alert('Erro ao rejeitar pedido: ' + e.message);
-                    }
-                };
-            });
-        }
-    } catch (e) {
         list.innerHTML = '<p style="color:red">Erro ao carregar pedidos</p>';
     }
 }
@@ -1202,7 +1213,7 @@ function render(){
 
     const isAdmin = currentUser && currentUser.role === 'admin';
     const isVisitor = currentUser && currentUser.role === 'visitante';
-    const isManagementRoute = ['users', 'sectors', 'orders', 'finance', 'new-user', 'new-setor', 'new-falecido', 'new-financeiro', 'setor-vagas'].includes(route);
+    const isManagementRoute = ['users', 'sectors', 'orders', 'finance', 'new-setor', 'new-falecido', 'new-financeiro', 'setor-vagas'].includes(route);
 
     // Bloquear rotas de gerenciamento para visitantes
     if (isManagementRoute && !isAdmin) {
@@ -1211,12 +1222,12 @@ function render(){
         return;
     }
 
-    // Permitir visitantes acessarem apenas a rota de falecidos
-    if (route === 'falecidos' || route === 'dead') {
-        app.innerHTML = renderFalecidos();
-        setTimeout(() => bindFalecidos(app), 0);
-        return;
-    }
+    // // Permitir visitantes acessarem apenas a rota de falecidos
+    // if (route === 'falecidos' || route === 'dead') {
+    //     app.innerHTML = renderFalecidos();
+    //     setTimeout(() => bindFalecidos(app), 0);
+    //     return;
+    // }
 
     // ROTAS DE CRIAÇÃO (NOVAS)
     if(route === 'new-user'){ app.innerHTML = renderNewUser(); setTimeout(()=>bindNewUser(app),0); return; }

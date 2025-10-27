@@ -1,0 +1,6 @@
+Flask
+Flask-Cors
+PyMySQL
+PyJWT
+gunicorn
+mysql-connector-python
