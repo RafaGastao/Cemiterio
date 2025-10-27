@@ -1,11 +1,11 @@
-import mysql.connector
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import hashlib
 import os
 
 from flask import Flask, jsonify, request, g, send_from_directory
 from flask_cors import CORS 
 
-from mysql.connector import Error
 import jwt 
 import datetime
 
@@ -19,23 +19,24 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'muda_essa_chave_para_produca
 
 def get_db_connection():
     try:
-        conn = mysql.connector.connect(
+        conn = psycopg2.connect(
             host=os.getenv('DB_HOST'),
             user=os.getenv('DB_USER'),
             password=os.getenv('DB_PASSWORD'),
-            database=os.getenv('DB_DATABASE'),
-            port=int(os.getenv('DB_PORT', 3306))
+            dbname=os.getenv('DB_DATABASE'),
+            port=int(os.getenv('DB_PORT', 5432)),
+            cursor_factory=RealDictCursor  # Retorna linhas como dicionários
         )
         return conn
-    except Error as e:
+    except psycopg2.Error as e:
         print('DB connection error:', e)
         return None
 
 
-# Helper: fetch all rows as list of dicts
-def rows_to_dicts(cursor):
-    cols = [c[0] for c in cursor.description]
-    return [dict(zip(cols, row)) for row in cursor.fetchall()]
+# Helper: fetch all rows as list of dicts (NÃO MAIS NECESSÁRIO com RealDictCursor)
+# def rows_to_dicts(cursor):
+#     cols = [c[0] for c in cursor.description]
+#     return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
 # Helper: Generate password hash with salt
 def generate_password_hash(password):
@@ -67,11 +68,15 @@ def authenticate_user():
         decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
         user_id = decoded.get('user_id')
         conn = get_db_connection()
+        if not conn:  # <-- ADICIONAR ESTA VERIFICAÇÃO
+            g.current_user = None
+            return
+
         cur = conn.cursor()
         cur.execute('SELECT id, name, role FROM usuarios WHERE id = %s', (user_id,))
         user = cur.fetchone()
         if user:
-            g.current_user = dict(zip(['id', 'name', 'role'], user))
+            g.current_user = user # Já é um dicionário
         else:
             g.current_user = None
         cur.close()
@@ -125,7 +130,7 @@ def login():
         if not row:
             return jsonify({'error': 'invalid credentials'}), 401
 
-        user = dict(zip([c[0] for c in cur.description], row))
+        user = row # Já é um dicionário
         stored_password = user['password']
 
         # Debugging log
@@ -157,16 +162,16 @@ def usuarios_collection():
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, name, username, email, role FROM usuarios')
-        data = rows_to_dicts(cur)
+        data = cur.fetchall()
         cur.close(); conn.close();
         return jsonify(data)
     else:
         payload = request.json or {}
         hashed_password = generate_password_hash(payload.get('password'))  # Hash the password
-        cur.execute('INSERT INTO usuarios (name, username, email, password, role) VALUES (%s,%s,%s,%s,%s)',
+        cur.execute('INSERT INTO usuarios (name, username, email, password, role) VALUES (%s,%s,%s,%s,%s) RETURNING id',
                     (payload.get('name'), payload.get('username'), payload.get('email'), hashed_password, payload.get('role','visitante')))
+        uid = cur.fetchone()['id']
         conn.commit()
-        uid = cur.lastrowid
         cur.close(); conn.close();
         return jsonify({'id': uid}), 201
 
@@ -177,9 +182,8 @@ def usuarios_single(uid):
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, name, username, email, role FROM usuarios WHERE id=%s', (uid,))
-        row = cur.fetchone()
-        if not row: cur.close(); conn.close(); return jsonify({}), 404
-        user = dict(zip([c[0] for c in cur.description], row))
+        user = cur.fetchone()
+        if not user: cur.close(); conn.close(); return jsonify({}), 404
         cur.close(); conn.close();
         return jsonify(user)
     if request.method == 'PUT':
@@ -201,13 +205,14 @@ def setores_collection():
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, name, vagas FROM setores')
-        data = rows_to_dicts(cur)
+        data = cur.fetchall()
         cur.close(); conn.close();
         return jsonify(data)
     else:
         p = request.json or {}
-        cur.execute('INSERT INTO setores (name, vagas) VALUES (%s,%s)', (p.get('name'), p.get('vagas')))
-        conn.commit(); nid = cur.lastrowid
+        cur.execute('INSERT INTO setores (name, vagas) VALUES (%s,%s) RETURNING id', (p.get('name'), p.get('vagas')))
+        nid = cur.fetchone()['id']
+        conn.commit();
         cur.close(); conn.close();
         return jsonify({'id': nid}),201
 
@@ -220,7 +225,7 @@ def setores_single(sid):
         cur.execute('SELECT id, name, vagas FROM setores WHERE id=%s', (sid,))
         row = cur.fetchone();
         if not row: cur.close(); conn.close(); return jsonify({}),404
-        res = dict(zip([c[0] for c in cur.description], row)); cur.close(); conn.close(); return jsonify(res)
+        cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
         p = request.json or {}
         cur.execute('UPDATE setores SET name=%s, vagas=%s WHERE id=%s', (p.get('name'), p.get('vagas'), sid))
@@ -239,7 +244,7 @@ def listar_vagas():
             SELECT s.id AS setor_id, s.name AS setor, s.vagas AS total_vagas
             FROM setores s
         """)
-        setores = rows_to_dicts(cur)
+        setores = cur.fetchall()
 
         for setor in setores:
             cur.execute("""
@@ -247,7 +252,7 @@ def listar_vagas():
                 FROM falecidos f
                 WHERE f.setor = %s
             """, (setor['setor_id'],))
-            ocupadas = [row['vaga'] for row in rows_to_dicts(cur)]
+            ocupadas = [row['vaga'] for row in cur.fetchall()]
             setor['vagas'] = [{'numero': i + 1, 'ocupada': i + 1 in ocupadas} for i in range(setor['total_vagas'])]
 
         return jsonify(setores)
@@ -277,7 +282,8 @@ def ocupar_vaga(setor_id):
         if not row:
             return jsonify({'error': 'Setor não encontrado'}), 404
 
-        vagas, ocupadas = row
+        vagas = row['vagas']
+        ocupadas = row['ocupadas']
         disponiveis = vagas - ocupadas
         if disponiveis <= 0:
             return jsonify({'error': 'Não há vagas disponíveis neste setor'}), 400
@@ -286,10 +292,11 @@ def ocupar_vaga(setor_id):
         payload = request.json or {}
         cur.execute("""
             INSERT INTO falecidos (name, anoNascimento, anoMorte, setor)
-            VALUES (%s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s) RETURNING id
         """, (payload.get('name'), payload.get('anoNascimento'), payload.get('anoMorte'), setor_id))
+        new_id = cur.fetchone()['id']
         conn.commit()
-        return jsonify({'message': 'Vaga ocupada com sucesso', 'id': cur.lastrowid}), 201
+        return jsonify({'message': 'Vaga ocupada com sucesso', 'id': new_id}), 201
     except Exception as e:
         print(f"Error occupying vaga: {e}")
         return jsonify({'error': 'internal server error'}), 500
@@ -312,8 +319,8 @@ def falecidos_collection():
             # Visitantes só podem ver falecidos associados a eles
             cur.execute("""
                 SELECT f.id, f.name, f.anoNascimento, f.anoMorte, s.name AS setor_nome, f.vaga,
-                       COALESCE(GROUP_CONCAT(DISTINCT p.nome SEPARATOR ', '), 'Nenhum') AS planos,
-                       COALESCE(GROUP_CONCAT(DISTINCT u.name SEPARATOR ', '), 'Nenhum') AS usuarios_associados
+                       COALESCE(STRING_AGG(DISTINCT p.nome, ', '), 'Nenhum') AS planos,
+                       COALESCE(STRING_AGG(DISTINCT u.name, ', '), 'Nenhum') AS usuarios_associados
                 FROM falecidos f
                 INNER JOIN usuarios_falecidos uf ON f.id = uf.falecido_id
                 LEFT JOIN usuarios u ON uf.user_id = u.id
@@ -327,8 +334,8 @@ def falecidos_collection():
             # Administradores podem ver todos os falecidos
             cur.execute("""
                 SELECT f.id, f.name, f.anoNascimento, f.anoMorte, s.name AS setor_nome, f.vaga,
-                       COALESCE(GROUP_CONCAT(DISTINCT p.nome SEPARATOR ', '), 'Nenhum') AS planos,
-                       COALESCE(GROUP_CONCAT(DISTINCT u.name SEPARATOR ', '), 'Nenhum') AS usuarios_associados
+                       COALESCE(STRING_AGG(DISTINCT p.nome, ', '), 'Nenhum') AS planos,
+                       COALESCE(STRING_AGG(DISTINCT u.name, ', '), 'Nenhum') AS usuarios_associados
                 FROM falecidos f
                 LEFT JOIN usuarios_falecidos uf ON f.id = uf.falecido_id
                 LEFT JOIN usuarios u ON uf.user_id = u.id
@@ -338,7 +345,7 @@ def falecidos_collection():
                 GROUP BY f.id
             """)
 
-        data = rows_to_dicts(cur)
+        data = cur.fetchall()
         return jsonify(data)
     except Exception as e:
         print(f"Error fetching falecidos: {e}")
@@ -356,7 +363,7 @@ def falecidos_single(fid):
         cur.execute('SELECT id, name, anoNascimento, anoMorte, setor FROM falecidos WHERE id=%s', (fid,))
         row = cur.fetchone();
         if not row: cur.close(); conn.close(); return jsonify({}),404
-        res = dict(zip([c[0] for c in cur.description], row)); cur.close(); conn.close(); return jsonify(res)
+        cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
         p = request.json or {}
         cur.execute('UPDATE falecidos SET name=%s, anoNascimento=%s, anoMorte=%s, setor=%s WHERE id=%s',
@@ -383,7 +390,7 @@ def atribuir_vaga(fid):
         cur.execute("""
             SELECT COUNT(*) FROM falecidos WHERE setor = %s AND vaga = %s
         """, (setor, vaga))
-        if cur.fetchone()[0] > 0:
+        if cur.fetchone()['count'] > 0:
             return jsonify({'error': 'Vaga já está ocupada'}), 400
 
         # Atualizar a vaga do falecido
@@ -421,7 +428,7 @@ def associar_falecido(fid):
 
         # Verificar se a associação já existe
         cur.execute('SELECT COUNT(*) FROM usuarios_falecidos WHERE user_id = %s AND falecido_id = %s', (user_id, fid))
-        if cur.fetchone()[0] > 0:
+        if cur.fetchone()['count'] > 0:
             return jsonify({'error': 'Associação já existe'}), 400
 
         # Criar a associação
@@ -450,7 +457,7 @@ def listar_falecidos_usuario(user_id):
             INNER JOIN usuarios_falecidos uf ON f.id = uf.falecido_id
             WHERE uf.user_id = %s
         """, (user_id,))
-        falecidos = rows_to_dicts(cur)
+        falecidos = cur.fetchall()
         return jsonify(falecidos)
     except Exception as e:
         print(f"Error listing falecidos for user: {e}")
@@ -509,7 +516,7 @@ def listar_planos_falecido(fid):
             INNER JOIN falecidos_planos fp ON c.id = fp.plano_id
             WHERE fp.falecido_id = %s
         """, (fid,))
-        planos = rows_to_dicts(cur)
+        planos = cur.fetchall()
         return jsonify(planos)
     except Exception as e:
         print(f"Error listing planos for falecido: {e}")
@@ -527,11 +534,12 @@ def catalogo_collection():
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, nome, descricao, preco FROM catalogo')
-        data = rows_to_dicts(cur); cur.close(); conn.close(); return jsonify(data)
+        data = cur.fetchall(); cur.close(); conn.close(); return jsonify(data)
     else:
         p = request.json or {}
-        cur.execute('INSERT INTO catalogo (nome, descricao, preco) VALUES (%s,%s,%s)', (p.get('nome'), p.get('descricao'), p.get('preco')))
-        conn.commit(); nid = cur.lastrowid; cur.close(); conn.close(); return jsonify({'id':nid}),201
+        cur.execute('INSERT INTO catalogo (nome, descricao, preco) VALUES (%s,%s,%s) RETURNING id', (p.get('nome'), p.get('descricao'), p.get('preco')))
+        nid = cur.fetchone()['id']
+        conn.commit(); cur.close(); conn.close(); return jsonify({'id':nid}),201
 
 
 # --- Carrinho (persistência de itens antes do pedido) ---
@@ -546,12 +554,13 @@ def carrinho_collection():
             cur.execute('SELECT id, user_id, produto_id, quantidade FROM carrinho WHERE user_id=%s', (user_id,))
         else:
             cur.execute('SELECT id, user_id, produto_id, quantidade FROM carrinho')
-        data = rows_to_dicts(cur); cur.close(); conn.close(); return jsonify(data)
+        data = cur.fetchall(); cur.close(); conn.close(); return jsonify(data)
     if request.method == 'POST':
         p = request.json or {}
         # espera: produto_id, quantidade, user_id (pode ser null)
-        cur.execute('INSERT INTO carrinho (user_id, produto_id, quantidade) VALUES (%s,%s,%s)', (p.get('user_id'), p.get('produto_id'), p.get('quantidade')))
-        conn.commit(); nid = cur.lastrowid; cur.close(); conn.close(); return jsonify({'id':nid}),201
+        cur.execute('INSERT INTO carrinho (user_id, produto_id, quantidade) VALUES (%s,%s,%s) RETURNING id', (p.get('user_id'), p.get('produto_id'), p.get('quantidade')))
+        nid = cur.fetchone()['id']
+        conn.commit(); cur.close(); conn.close(); return jsonify({'id':nid}),201
     if request.method == 'DELETE':
         # permitir deleção por user_id query param (limpar carrinho) ou corpo ?user_id=
         user_id = request.args.get('user_id')
@@ -571,7 +580,7 @@ def carrinho_item(item_id):
         cur.execute('SELECT id, user_id, produto_id, quantidade FROM carrinho WHERE id=%s', (item_id,))
         row = cur.fetchone();
         if not row: cur.close(); conn.close(); return jsonify({}),404
-        res = dict(zip([c[0] for c in cur.description], row)); cur.close(); conn.close(); return jsonify(res)
+        cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
         p = request.json or {}
         cur.execute('UPDATE carrinho SET quantidade=%s WHERE id=%s', (p.get('quantidade'), item_id))
@@ -596,10 +605,10 @@ def pedidos_collection():
 
             # Insert the order
             cur.execute(
-                'INSERT INTO pedidos (user_id, nome, cpf, email, telefone, forma_pagamento, total, status, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                'INSERT INTO pedidos (user_id, nome, cpf, email, telefone, forma_pagamento, total, status, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
                 (p.get('user_id'), p.get('nome'), hashed_cpf, p.get('email'), p.get('telefone'), p.get('forma_pagamento'), p.get('total'), 'pendente', datetime.datetime.utcnow())
             )
-            pid = cur.lastrowid
+            pid = cur.fetchone()['id']
 
             # Insert order items
             for it in p.get('itens', []):
@@ -640,7 +649,7 @@ def pedidos_collection():
                 conn.close()
                 return jsonify([]), 200
 
-            pedidos = rows_to_dicts(cur)
+            pedidos = cur.fetchall()
             return jsonify(pedidos)
         except Exception as e:
             print(f"Error fetching pedidos: {e}")
@@ -685,11 +694,12 @@ def financeiro_collection():
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, tipo, descricao, valor, data FROM financeiro')
-        data = rows_to_dicts(cur); cur.close(); conn.close(); return jsonify(data)
+        data = cur.fetchall(); cur.close(); conn.close(); return jsonify(data)
     else:
         p = request.json or {}
-        cur.execute('INSERT INTO financeiro (tipo, descricao, valor, data) VALUES (%s,%s,%s,%s)', (p.get('tipo'), p.get('descricao'), p.get('valor'), p.get('data')))
-        conn.commit(); nid = cur.lastrowid; cur.close(); conn.close(); return jsonify({'id':nid}),201
+        cur.execute('INSERT INTO financeiro (tipo, descricao, valor, data) VALUES (%s,%s,%s,%s) RETURNING id', (p.get('tipo'), p.get('descricao'), p.get('valor'), p.get('data')))
+        nid = cur.fetchone()['id']
+        conn.commit(); cur.close(); conn.close(); return jsonify({'id':nid}),201
 
 @app.route('/api/financeiro/<int:fid>', methods=['GET','PUT','DELETE'])
 def financeiro_single(fid):
@@ -700,7 +710,7 @@ def financeiro_single(fid):
         cur.execute('SELECT id, tipo, descricao, valor, data FROM financeiro WHERE id=%s', (fid,))
         row = cur.fetchone();
         if not row: cur.close(); conn.close(); return jsonify({}),404
-        res = dict(zip([c[0] for c in cur.description], row)); cur.close(); conn.close(); return jsonify(res)
+        cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
         p = request.json or {}
         cur.execute('UPDATE financeiro SET tipo=%s, descricao=%s, valor=%s, data=%s WHERE id=%s', (p.get('tipo'), p.get('descricao'), p.get('valor'), p.get('data'), fid))
