@@ -2,17 +2,18 @@ import mysql.connector
 import hashlib
 import os
 
-from flask import Flask, jsonify, request, g
+from flask import Flask, jsonify, request, g, send_from_directory
 from flask_cors import CORS 
 
 from mysql.connector import Error
 import jwt 
 import datetime
 
-app = Flask(__name__)
+# Ajuste para servir arquivos estáticos da pasta raiz do projeto
+app = Flask(__name__, static_folder='..', static_url_path='/')
 # Modificado para usar variável de ambiente para a URL do frontend e ser mais específico na rota
 frontend_url = os.getenv('FRONTEND_URL', 'http://127.0.0.1:5500')
-CORS(app, resources={r"/api/*": {"origins": [frontend_url, "http://localhost:5500"]}})
+CORS(app, resources={r"/api/*": {"origins": [frontend_url, "http://localhost:5500", "https://cemiterio-0elv.onrender.com"]}})
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'muda_essa_chave_para_producao')
 
 
@@ -79,6 +80,19 @@ def authenticate_user():
     except Exception as e:
         print(f"Authentication error: {e}")
         g.current_user = None
+
+# --- Rota para servir o frontend ---
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    # Ignora as rotas da API para não entrar em conflito
+    elif not path.startswith('api/'):
+        return send_from_directory(app.static_folder, 'index.html')
+    else:
+        # Deixa o Flask tratar a rota da API que não foi encontrada
+        return "Not Found", 404
 
 # --- NEW: API Root Status Route ---
 @app.route('/api', methods=['GET'])
