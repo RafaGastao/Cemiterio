@@ -333,7 +333,7 @@ def falecidos_collection():
                 LEFT JOIN falecidos_planos fp ON f.id = fp.falecido_id
                 LEFT JOIN catalogo p ON fp.plano_id = p.id
                 WHERE uf.user_id = %s
-                GROUP BY f.id
+                GROUP BY f.id, s.name
             """, (g.current_user['id'],))
         else:
             # Administradores podem ver todos os falecidos
@@ -347,7 +347,7 @@ def falecidos_collection():
                 LEFT JOIN setores s ON f.setor = s.id
                 LEFT JOIN falecidos_planos fp ON f.id = fp.falecido_id
                 LEFT JOIN catalogo p ON fp.plano_id = p.id
-                GROUP BY f.id
+                GROUP BY f.id, s.name
             """)
 
         data = cur.fetchall()

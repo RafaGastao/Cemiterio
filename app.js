@@ -641,6 +641,12 @@ async function bindFalecidos(container) {
 
         // Bind para ações de administrador
         if (currentUser?.role === 'admin') {
+            // Adiciona o bind para o botão "Adicionar Falecido"
+            const newBtn = container.querySelector('button[data-route="new-falecido"]');
+            if (newBtn) {
+                newBtn.onclick = () => { location.hash = '#new-falecido'; render(); };
+            }
+
             list.querySelectorAll('[data-edit]').forEach(btn => {
                 btn.onclick = () => {
                     const falecidoId = btn.dataset.edit;
@@ -1250,7 +1256,7 @@ function render(){
     if(route === 'users'){ app.innerHTML = renderUsers(); setTimeout(()=>bindUsers(app),0); return; }
     if(route === 'setores' || route === 'sectors'){ app.innerHTML = renderSetores(); setTimeout(()=>bindSetores(app),0); return; }
     if(route === 'falecidos' || route === 'dead'){ app.innerHTML = renderFalecidos(); setTimeout(()=>bindFalecidos(app),0); return; }
-    if(route === 'orders'){ app.innerHTML = renderOrders(); setTimeout(()=>bindOrders(app),0); return; }
+    if(route === 'orders' || route === 'pedidos'){ app.innerHTML = renderPedidos(); setTimeout(()=>bindPedidos(app),0); return; }
     if(route === 'financeiro' || route=== 'finance'){ app.innerHTML = renderFinanceiro(); setTimeout(()=>bindFinanceiro(app),0); return; }
     if(route === 'pedidos'){ app.innerHTML = renderPedidos(); setTimeout(()=>bindPedidos(app),0); return; }
     
