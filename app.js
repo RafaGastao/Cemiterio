@@ -266,12 +266,6 @@ function renderNewUser(){
                 <div class="form-row"><label>Usuário (Login)</label><input id="uUser" class="input" required></div>
                 <div class="form-row"><label>Email</label><input id="uEmail" type="email" class="input"></div>
                 <div class="form-row"><label>Senha</label><input id="uPass" type="password" class="input" required></div>
-                <div class="form-row"><label>Nível (Role)</label>
-                    <select id="uRole" class="input">
-                        <option value="visitante">Visitante</option>
-                        <option value="admin">admin</option>
-                    </select>
-                </div>
                 <div class="footer-actions">
                     <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-ghost" onclick="location.hash='#users';render()">Cancelar</button>
@@ -852,7 +846,7 @@ async function bindFinanceiro(container) {
             <div class="list-item financeiro-item">
                 <div>
                     <strong>${i.descricao}</strong> (${i.tipo})<br>
-                    <small>Valor: R$ ${Number(i.valor).toFixed(2)} | Data: ${i.data} | Status: ${i.status || 'Pendente'}</small>
+                    <small>Valor: R$ ${Number(i.valor).toFixed(2)} | Data: ${i.data}</small>
                 </div>
                 <div class="actions">
                     <button class="btn btn-ghost" data-edit="${i.id}">Editar</button>
@@ -907,12 +901,6 @@ function renderEditFinanceiro(financeiro) {
                 <div class="form-row"><label>Descrição</label><input id="fnDescricao" class="input" value="${financeiro.descricao}" required></div>
                 <div class="form-row"><label>Valor</label><input id="fnValor" type="number" step="0.01" class="input" value="${financeiro.valor}" required></div>
                 <div class="form-row"><label>Data</label><input id="fnData" type="date" class="input" value="${financeiro.data}" required></div>
-                <div class="form-row"><label>Status</label>
-                    <select id="fnStatus" class="input">
-                        <option value="pendente" ${financeiro.status === 'pendente' ? 'selected' : ''}>Pendente</option>
-                        <option value="pago" ${financeiro.status === 'pago' ? 'selected' : ''}>Pago</option>
-                    </select>
-                </div>
                 <div class="footer-actions">
                     <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-ghost" onclick="location.hash='#financeiro';render()">Cancelar</button>
@@ -928,8 +916,7 @@ function renderEditFinanceiro(financeiro) {
             tipo: document.getElementById('fnTipo').value,
             descricao: document.getElementById('fnDescricao').value,
             valor: Number(document.getElementById('fnValor').value),
-            data: document.getElementById('fnData').value,
-            status: document.getElementById('fnStatus').value
+            data: document.getElementById('fnData').value
         };
         try {
             await updateFinanceiro(financeiro.id, payload);
@@ -965,8 +952,7 @@ async function bindNewUser(container){
             name: el('uName').value,
             username: el('uUser').value,
             email: el('uEmail').value,
-            password: el('uPass').value,
-            role: el('uRole').value
+            password: el('uPass').value
         };
         try{
             await createUser(payload);

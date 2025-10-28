@@ -189,8 +189,7 @@ def usuarios_single(uid):
         cur.execute('SELECT id, name, username, email, role FROM usuarios WHERE id=%s', (uid,))
         user = cur.fetchone()
         if not user: cur.close(); conn.close(); return jsonify({}), 404
-        cur.close(); conn.close();
-        return jsonify(user)
+        cur.close(); conn.close(); return jsonify(user)
     if request.method == 'PUT':
         p = request.json or {}
         hashed_password = generate_password_hash(p.get('password')) if p.get('password') else None
@@ -629,12 +628,12 @@ def pedidos_collection():
         p = request.json or {}
         try:
             # Hash and salt the CPF
-            hashed_cpf = hash_sensitive_data(p.get('cpf'))
+            # hashed_cpf = hash_sensitive_data(p.get('cpf')) # REMOVIDO - O hash é muito longo para a coluna cpf VARCHAR(14)
 
             # Insert the order
             cur.execute(
-                'INSERT INTO pedidos (user_id, nome, cpf, email, telefone, forma_pagamento, total, status, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
-                (p.get('user_id'), p.get('nome'), hashed_cpf, p.get('email'), p.get('telefone'), p.get('forma_pagamento'), p.get('total'), 'pendente', datetime.datetime.utcnow())
+                'INSERT INTO pedidos (user_id, nome, cpf, email, telefone, forma_pagamento, total, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
+                (p.get('user_id'), p.get('nome'), p.get('cpf'), p.get('email'), p.get('telefone'), p.get('forma_pagamento'), p.get('total'), datetime.datetime.utcnow())
             )
             pid = cur.fetchone()['id']
 
