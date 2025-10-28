@@ -319,6 +319,29 @@ def falecidos_collection():
         return jsonify([]), 500
     cur = conn.cursor()
 
+    if request.method == 'POST':
+        try:
+            payload = request.json or {}
+            cur.execute("""
+                INSERT INTO falecidos (name, anoNascimento, anoMorte, setor, vaga)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
+            """, (
+                payload.get('name'),
+                payload.get('anoNascimento'),
+                payload.get('anoMorte'),
+                payload.get('setor'),
+                payload.get('vaga')
+            ))
+            new_id = cur.fetchone()['id']
+            conn.commit()
+            return jsonify({'id': new_id}), 201
+        except Exception as e:
+            print(f"Error creating falecido: {e}")
+            return jsonify({'error': 'internal server error'}), 500
+        finally:
+            cur.close()
+            conn.close()
+
     try:
         if g.current_user and g.current_user['role'] == 'visitante':
             # Visitantes só podem ver falecidos associados a eles
