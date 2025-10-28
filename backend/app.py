@@ -735,10 +735,19 @@ def financeiro_collection():
     
     if request.method == 'POST':
         p = request.json or {}
+        # --- Validação dos dados de entrada ---
+        tipo = p.get('tipo')
+        valor = p.get('valor')
+        data = p.get('data')
+
+        if not tipo or not valor or not data:
+            return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
+        # --- Fim da validação ---
+
         try:
             cur.execute(
                 'INSERT INTO financeiro (tipo, descricao, valor, data) VALUES (%s, %s, %s, %s) RETURNING id',
-                (p.get('tipo'), p.get('descricao'), p.get('valor'), p.get('data'))
+                (tipo, p.get('descricao'), valor, data)
             )
             nid = cur.fetchone()['id']
             conn.commit()
@@ -746,7 +755,7 @@ def financeiro_collection():
         except Exception as e:
             conn.rollback()  # Desfaz a transação em caso de erro
             print(f"Erro ao criar registro financeiro: {e}")  # Log do erro no console do backend
-            return jsonify({'error': 'Erro interno ao salvar no banco de dados.'}), 500
+            return jsonify({'error': 'Erro interno ao salvar no banco de dados. Verifique o formato dos dados.'}), 500
         finally:
             cur.close()
             conn.close()
