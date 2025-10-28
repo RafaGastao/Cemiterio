@@ -628,12 +628,12 @@ def pedidos_collection():
         p = request.json or {}
         try:
             # Hash and salt the CPF
-            # hashed_cpf = hash_sensitive_data(p.get('cpf')) # REMOVIDO - O hash é muito longo para a coluna cpf VARCHAR(14)
+            hashed_cpf = hash_sensitive_data(p.get('cpf'))
 
             # Insert the order
             cur.execute(
                 'INSERT INTO pedidos (user_id, nome, cpf, email, telefone, forma_pagamento, total, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
-                (p.get('user_id'), p.get('nome'), p.get('cpf'), p.get('email'), p.get('telefone'), p.get('forma_pagamento'), p.get('total'), datetime.datetime.utcnow())
+                (p.get('user_id'), p.get('nome'), hashed_cpf, p.get('email'), p.get('telefone'), p.get('forma_pagamento'), p.get('total'), datetime.datetime.utcnow())
             )
             pid = cur.fetchone()['id']
 
