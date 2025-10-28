@@ -1031,11 +1031,21 @@ async function bindNewFinanceiro(container){
     if(!form) return;
     form.onsubmit = async (e) => {
         e.preventDefault();
+        
+        const dataInput = el('fnData');
+        const dataValue = dataInput.value; // ex: "2025-10-27"
+        
+        // Validação para garantir que a data não está vazia
+        if (!dataValue) {
+            alert('O campo Data é obrigatório.');
+            return;
+        }
+
         const payload = {
             tipo: el('fnTipo').value,
             descricao: el('fnDescricao').value,
             valor: Number(el('fnValor').value),
-            data: el('fnData').value
+            data: dataValue // Garante que o formato YYYY-MM-DD seja enviado
         };
         try{
             await createFinanceiro(payload);
