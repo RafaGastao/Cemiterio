@@ -716,17 +716,40 @@ def aprovar_pedido(pedido_id):
 # --- Financeiro ---
 @app.route('/api/financeiro', methods=['GET','POST'])
 def financeiro_collection():
-    conn = get_db_connection();
-    if not conn: return jsonify([]),500
+    conn = get_db_connection()
+    if not conn:
+        return jsonify([]), 500
     cur = conn.cursor()
+    
     if request.method == 'GET':
-        cur.execute('SELECT id, tipo, descricao, valor, data FROM financeiro')
-        data = cur.fetchall(); cur.close(); conn.close(); return jsonify(data)
-    else:
+        try:
+            cur.execute('SELECT id, tipo, descricao, valor, data FROM financeiro')
+            data = cur.fetchall()
+            return jsonify(data)
+        except Exception as e:
+            print(f"Erro ao buscar registros financeiros: {e}")
+            return jsonify({'error': 'Erro interno ao buscar dados.'}), 500
+        finally:
+            cur.close()
+            conn.close()
+    
+    if request.method == 'POST':
         p = request.json or {}
-        cur.execute('INSERT INTO financeiro (tipo, descricao, valor, data) VALUES (%s,%s,%s,%s) RETURNING id', (p.get('tipo'), p.get('descricao'), p.get('valor'), p.get('data')))
-        nid = cur.fetchone()['id']
-        conn.commit(); cur.close(); conn.close(); return jsonify({'id':nid}),201
+        try:
+            cur.execute(
+                'INSERT INTO financeiro (tipo, descricao, valor, data) VALUES (%s, %s, %s, %s) RETURNING id',
+                (p.get('tipo'), p.get('descricao'), p.get('valor'), p.get('data'))
+            )
+            nid = cur.fetchone()['id']
+            conn.commit()
+            return jsonify({'id': nid}), 201
+        except Exception as e:
+            conn.rollback()  # Desfaz a transação em caso de erro
+            print(f"Erro ao criar registro financeiro: {e}")  # Log do erro no console do backend
+            return jsonify({'error': 'Erro interno ao salvar no banco de dados.'}), 500
+        finally:
+            cur.close()
+            conn.close()
 
 @app.route('/api/financeiro/<int:fid>', methods=['GET','PUT','DELETE'])
 def financeiro_single(fid):
