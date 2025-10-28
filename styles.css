@@ -1,6 +1,7 @@
 :root {
   --primary: #2a7ae4;
   --danger: #e63946;
+  --info: #00bcd4; /* Nova cor */
   --bg: #f5f7fa;
   --card-bg: #fff;
   --text: #333;
@@ -168,6 +169,9 @@ footer {
 
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-danger:hover { background: #c62c38; }
+
+.btn-info { background: var(--info); color: #fff; }
+.btn-info:hover { background: #0097a7; }
 
 .btn-ghost { background: transparent; border: 1px solid #ccc; }
 .btn-ghost:hover { background: #f0f0f0; }

@@ -640,7 +640,8 @@ async function bindFalecidos(container) {
                     ${currentUser?.role === 'admin' ? `
                         <button class="btn btn-ghost" data-edit="${f.id}">Editar</button>
                         <button class="btn btn-danger" data-delete="${f.id}">Excluir</button>
-                        <button class="btn btn-primary" data-associate="${f.id}">Associar</button>
+                        <button class="btn btn-primary" data-associate-user="${f.id}">Associar Usuário</button>
+                        <button class="btn btn-info" data-associate-plano="${f.id}">Associar Plano</button>
                     ` : ''}
                 </div>
             </div>
@@ -677,9 +678,9 @@ async function bindFalecidos(container) {
                 };
             });
 
-            list.querySelectorAll('[data-associate]').forEach(btn => {
+            list.querySelectorAll('[data-associate-user]').forEach(btn => {
                 btn.onclick = async () => {
-                    const falecidoId = btn.dataset.associate;
+                    const falecidoId = btn.dataset.associateUser;
                     const userId = prompt('Informe o ID do usuário para associar:');
                     if (userId) {
                         try {
@@ -688,6 +689,22 @@ async function bindFalecidos(container) {
                             render();
                         } catch (e) {
                             alert('Erro ao associar falecido: ' + e.message);
+                        }
+                    }
+                };
+            });
+
+            list.querySelectorAll('[data-associate-plano]').forEach(btn => {
+                btn.onclick = async () => {
+                    const falecidoId = btn.dataset.associatePlano;
+                    const planoId = prompt('Informe o ID do plano para associar:');
+                    if (planoId) {
+                        try {
+                            await associatePlanoToFalecido(falecidoId, planoId);
+                            alert('Plano associado ao falecido com sucesso!');
+                            render(); // Recarrega a lista para mostrar o plano associado
+                        } catch (e) {
+                            alert('Erro ao associar plano: ' + e.message);
                         }
                     }
                 };
@@ -1325,15 +1342,4 @@ async function associatePlanoToFalecido(falecidoId, planoId) {
 // Função para obter os planos associados a um falecido
 async function getPlanosByFalecido(falecidoId) {
     return api(`falecidos/${falecidoId}/planos`);
-}
-
-/**
- * Função para aplicar hash e salt ao CPF antes de enviá-lo ao backend.
- * @param {string} cpf - O CPF a ser protegido.
- * @returns {string} - O CPF protegido com hash e salt.
- */
-function hashCPF(cpf) {
-    const salt = CryptoJS.lib.WordArray.random(16); // Gera um salt aleatório
-    const hash = CryptoJS.PBKDF2(cpf, salt, { keySize: 256 / 32, iterations: 1000 });
-    return `${salt.toString(CryptoJS.enc.Hex)}:${hash.toString(CryptoJS.enc.Hex)}`;
 }
