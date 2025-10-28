@@ -3,7 +3,7 @@
  * - Frontend talks to backend via API_BASE
  */
 
-const API_BASE = 'https://cemiterio-0elv.onrender.com/api';
+const API_BASE = 'http://localhost:5000/api';
 
 let token = localStorage.getItem('cem_token') || null;
 let currentUser = null; // populated after successful login
@@ -138,10 +138,7 @@ function renderLogin(){
             <h2>Entrar</h2>
             <div class="form-row"><label>Usuário</label><input id="loginUser" class="input"/></div>
             <div class="form-row"><label>Senha</label><input id="loginPass" type="password" class="input"/></div>
-            <div class="footer-actions">
-                <button id="goRegister" class="btn btn-ghost">Criar novo usuário</button>
-                <button id="doLogin" class="btn btn-primary">Entrar</button>
-            </div>
+            <div class="footer-actions"><button id="doLogin" class="btn btn-primary">Entrar</button></div>
         </div>`;
 }
 
@@ -266,6 +263,12 @@ function renderNewUser(){
                 <div class="form-row"><label>Usuário (Login)</label><input id="uUser" class="input" required></div>
                 <div class="form-row"><label>Email</label><input id="uEmail" type="email" class="input"></div>
                 <div class="form-row"><label>Senha</label><input id="uPass" type="password" class="input" required></div>
+                <div class="form-row"><label>Nível (Role)</label>
+                    <select id="uRole" class="input">
+                        <option value="visitante">Visitante</option>
+                        <option value="admin">admin</option>
+                    </select>
+                </div>
                 <div class="footer-actions">
                     <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-ghost" onclick="location.hash='#users';render()">Cancelar</button>
@@ -404,14 +407,6 @@ async function bindLogin(container){
             render();
         }catch(e){ alert('Erro: ' + e.message); }
     };
-
-    const registerBtn = el('goRegister');
-    if (registerBtn) {
-        registerBtn.onclick = () => {
-            location.hash = '#new-user';
-            render();
-        };
-    }
 }
 
 async function bindCatalog(container){
@@ -600,32 +595,29 @@ async function bindSetores(container){
 async function bindFalecidos(container) {
     const list = container.querySelector('#falecidosList');
     if (!list) return;
+}
 
-    // Bind para o botão "Adicionar Falecido" (deve ser feito aqui, fora do try/catch da lista)
-    if (currentUser?.role === 'admin') {
-        const newBtn = container.querySelector('button[data-route="new-falecido"]');
-        if (newBtn) {
-            newBtn.onclick = () => { location.hash = '#new-falecido'; render(); };
-        }
-    }
+async function bindPedidos(container) {
+    const list = container.querySelector('#pedidosList');
+    if (!list) return;
 
     // Verifique se o usuário está logado
     if (!isUserLoggedIn()) {
+        list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os pedidos.</p>';
+        return;
+    }
+    // Verifique se o usuário está logado
+    if (!currentUser) {
         list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os falecidos.</p>';
         return;
     }
 
     try {
         const falecidos = await getFalecidos();
-        if (!falecidos || falecidos.length === 0) {
-            list.innerHTML = '<p>Nenhum falecido encontrado.</p>';
-            return;
-        }
-
         let html = falecidos.map(f => `
             <div class="list-item falecido-item">
                 <div>
-                    <strong>${f.name}</strong> (Nasc: ${f.anonascimento} - Morte: ${f.anomorte})<br>
+                    <strong>${f.name}</strong> (Nasc: ${f.anoNascimento} - Morte: ${f.anoMorte})<br>
                     <small>Setor: ${f.setor_nome || 'Não atribuído'}, Vaga: ${f.vaga || 'N/A'}</small><br>
                     <small>Planos: ${f.planos || 'Nenhum'}</small><br>
                     <small>Usuários Associados: ${f.usuarios_associados || 'Nenhum'}</small>
@@ -634,8 +626,7 @@ async function bindFalecidos(container) {
                     ${currentUser?.role === 'admin' ? `
                         <button class="btn btn-ghost" data-edit="${f.id}">Editar</button>
                         <button class="btn btn-danger" data-delete="${f.id}">Excluir</button>
-                        <button class="btn btn-primary" data-associate-user="${f.id}">Associar Usuário</button>
-                        <button class="btn btn-info" data-associate-plano="${f.id}">Associar Plano</button>
+                        <button class="btn btn-primary" data-associate="${f.id}">Associar</button>
                     ` : ''}
                 </div>
             </div>
@@ -644,12 +635,6 @@ async function bindFalecidos(container) {
 
         // Bind para ações de administrador
         if (currentUser?.role === 'admin') {
-            // Adiciona o bind para o botão "Adicionar Falecido"
-            const newBtn = container.querySelector('button[data-route="new-falecido"]');
-            if (newBtn) {
-                newBtn.onclick = () => { location.hash = '#new-falecido'; render(); };
-            }
-
             list.querySelectorAll('[data-edit]').forEach(btn => {
                 btn.onclick = () => {
                     const falecidoId = btn.dataset.edit;
@@ -660,7 +645,8 @@ async function bindFalecidos(container) {
             list.querySelectorAll('[data-delete]').forEach(btn => {
                 btn.onclick = async () => {
                     const falecidoId = btn.dataset.delete;
-                    if (confirm('Tem certeza de que deseja excluir este registro?')) {
+                    const confirmDelete = confirm('Tem certeza de que deseja excluir este registro?');
+                    if (confirmDelete) {
                         try {
                             await deleteFalecido(falecidoId);
                             alert('Registro excluído com sucesso!');
@@ -672,9 +658,9 @@ async function bindFalecidos(container) {
                 };
             });
 
-            list.querySelectorAll('[data-associate-user]').forEach(btn => {
+            list.querySelectorAll('[data-associate]').forEach(btn => {
                 btn.onclick = async () => {
-                    const falecidoId = btn.dataset.associateUser;
+                    const falecidoId = btn.dataset.associate;
                     const userId = prompt('Informe o ID do usuário para associar:');
                     if (userId) {
                         try {
@@ -687,88 +673,9 @@ async function bindFalecidos(container) {
                     }
                 };
             });
-
-            list.querySelectorAll('[data-associate-plano]').forEach(btn => {
-                btn.onclick = async () => {
-                    const falecidoId = btn.dataset.associatePlano;
-                    const planoId = prompt('Informe o ID do plano para associar:');
-                    if (planoId) {
-                        try {
-                            await associatePlanoToFalecido(falecidoId, planoId);
-                            alert('Plano associado ao falecido com sucesso!');
-                            render(); // Recarrega a lista para mostrar o plano associado
-                        } catch (e) {
-                            alert('Erro ao associar plano: ' + e.message);
-                        }
-                    }
-                };
-            });
         }
     } catch (e) {
-        list.innerHTML = `<p style="color:red">Erro ao carregar falecidos: ${e.message}</p>`;
-    }
-}
-
-async function bindPedidos(container) {
-    const list = container.querySelector('#pedidosList');
-    if (!list) return;
-
-    // Verifique se o usuário está logado
-    if (!isUserLoggedIn()) {
-        list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os pedidos.</p>';
-        return;
-    }
-
-    try {
-        const pedidos = await getPedidos();
-        if (!pedidos || pedidos.length === 0) {
-            list.innerHTML = '<p>Nenhum pedido encontrado.</p>';
-            return;
-        }
-
-        let html = pedidos.map(p => {
-            // Removida a lógica de statusAprovacao pois o campo não vem mais na listagem
-            return `
-            <div class="list-item pedido-item">
-                <div>
-                    <strong>Pedido #${p.id}</strong> (Total: R$ ${Number(p.total).toFixed(2)})<br>
-                    <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small><br>
-                    ${currentUser?.role === 'admin' ? `
-                        <div class="actions">
-                            <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
-                            <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
-                        </div>
-                    ` : ''}
-                </div>
-            </div>
-        `}).join('');
-        list.innerHTML = html;
-
-        if (currentUser?.role === 'admin') {
-            const handleUpdate = async (pedidoId, isApproved, successMessage, errorMessage) => {
-                try {
-                    await updatePedidoAprovacao(pedidoId, isApproved);
-                    alert(successMessage);
-                    // Recarrega a view para refletir a mudança
-                    const currentHash = location.hash;
-                    location.hash = '';
-                    location.hash = currentHash;
-                    render();
-                } catch (e) {
-                    alert(`${errorMessage}: ${e.message}`);
-                }
-            };
-
-            list.querySelectorAll('[data-aprovar]').forEach(btn => {
-                btn.onclick = () => handleUpdate(btn.dataset.aprovar, true, 'Pedido aprovado com sucesso!', 'Erro ao aprovar pedido');
-            });
-
-            list.querySelectorAll('[data-rejeitar]').forEach(btn => {
-                btn.onclick = () => handleUpdate(btn.dataset.rejeitar, false, 'Pedido rejeitado com sucesso!', 'Erro ao rejeitar pedido');
-            });
-        }
-    } catch (e) {
-        list.innerHTML = `<p style="color:red">Erro ao carregar pedidos: ${e.message}</p>`;
+        list.innerHTML = '<p style="color:red">Erro ao carregar falecidos</p>';
     }
 }
 
@@ -830,23 +737,69 @@ async function bindOrders(container){
     }
 }
 
+async function bindPedidos(container) {
+    const list = container.querySelector('#pedidosList');
+    if (!list) return;
+
+    try {
+        const pedidos = await getPedidos();
+        let html = pedidos.map(p => `
+            <div class="list-item pedido-item">
+                <div>
+                    <strong>Pedido #${p.id}</strong> (Total: R$ ${Number(p.total).toFixed(2)})<br>
+                    <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small><br>
+                    <small>Aprovado: ${p.aprovado ? 'Sim' : 'Não'}</small><br>
+                    ${currentUser?.role === 'admin' ? `
+                        <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
+                        <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+        list.innerHTML = html;
+
+        if (currentUser?.role === 'admin') {
+            list.querySelectorAll('[data-aprovar]').forEach(btn => {
+                btn.onclick = async () => {
+                    const pedidoId = btn.dataset.aprovar;
+                    try {
+                        await updatePedidoAprovacao(pedidoId, true);
+                        alert('Pedido aprovado com sucesso!');
+                        render();
+                    } catch (e) {
+                        alert('Erro ao aprovar pedido: ' + e.message);
+                    }
+                };
+            });
+
+            list.querySelectorAll('[data-rejeitar]').forEach(btn => {
+                btn.onclick = async () => {
+                    const pedidoId = btn.dataset.rejeitar;
+                    try {
+                        await updatePedidoAprovacao(pedidoId, false);
+                        alert('Pedido rejeitado com sucesso!');
+                        render();
+                    } catch (e) {
+                        alert('Erro ao rejeitar pedido: ' + e.message);
+                    }
+                };
+            });
+        }
+    } catch (e) {
+        list.innerHTML = '<p style="color:red">Erro ao carregar pedidos</p>';
+    }
+}
+
 async function bindFinanceiro(container) {
     const list = container.querySelector('#financeiroList');
     if (!list) return;
-
-    // Adiciona o bind para o botão "Novo Registro"
-    const newBtn = container.querySelector('button[data-route="new-financeiro"]');
-    if (newBtn) {
-        newBtn.onclick = () => { location.hash = '#new-financeiro'; render(); };
-    }
-
     try {
         const items = await getFinanceiro();
         let html = items.map(i => `
             <div class="list-item financeiro-item">
                 <div>
                     <strong>${i.descricao}</strong> (${i.tipo})<br>
-                    <small>Valor: R$ ${Number(i.valor).toFixed(2)} | Data: ${i.data}</small>
+                    <small>Valor: R$ ${Number(i.valor).toFixed(2)} | Data: ${i.data} | Status: ${i.status || 'Pendente'}</small>
                 </div>
                 <div class="actions">
                     <button class="btn btn-ghost" data-edit="${i.id}">Editar</button>
@@ -901,6 +854,12 @@ function renderEditFinanceiro(financeiro) {
                 <div class="form-row"><label>Descrição</label><input id="fnDescricao" class="input" value="${financeiro.descricao}" required></div>
                 <div class="form-row"><label>Valor</label><input id="fnValor" type="number" step="0.01" class="input" value="${financeiro.valor}" required></div>
                 <div class="form-row"><label>Data</label><input id="fnData" type="date" class="input" value="${financeiro.data}" required></div>
+                <div class="form-row"><label>Status</label>
+                    <select id="fnStatus" class="input">
+                        <option value="pendente" ${financeiro.status === 'pendente' ? 'selected' : ''}>Pendente</option>
+                        <option value="pago" ${financeiro.status === 'pago' ? 'selected' : ''}>Pago</option>
+                    </select>
+                </div>
                 <div class="footer-actions">
                     <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-ghost" onclick="location.hash='#financeiro';render()">Cancelar</button>
@@ -916,7 +875,8 @@ function renderEditFinanceiro(financeiro) {
             tipo: document.getElementById('fnTipo').value,
             descricao: document.getElementById('fnDescricao').value,
             valor: Number(document.getElementById('fnValor').value),
-            data: document.getElementById('fnData').value
+            data: document.getElementById('fnData').value,
+            status: document.getElementById('fnStatus').value
         };
         try {
             await updateFinanceiro(financeiro.id, payload);
@@ -952,7 +912,8 @@ async function bindNewUser(container){
             name: el('uName').value,
             username: el('uUser').value,
             email: el('uEmail').value,
-            password: el('uPass').value
+            password: el('uPass').value,
+            role: el('uRole').value
         };
         try{
             await createUser(payload);
@@ -1031,21 +992,11 @@ async function bindNewFinanceiro(container){
     if(!form) return;
     form.onsubmit = async (e) => {
         e.preventDefault();
-        
-        const dataInput = el('fnData');
-        const dataValue = dataInput.value; // ex: "2025-10-27"
-        
-        // Validação para garantir que a data não está vazia
-        if (!dataValue) {
-            alert('O campo Data é obrigatório.');
-            return;
-        }
-
         const payload = {
             tipo: el('fnTipo').value,
             descricao: el('fnDescricao').value,
             valor: Number(el('fnValor').value),
-            data: dataValue // Garante que o formato YYYY-MM-DD seja enviado
+            data: el('fnData').value
         };
         try{
             await createFinanceiro(payload);
@@ -1251,7 +1202,7 @@ function render(){
 
     const isAdmin = currentUser && currentUser.role === 'admin';
     const isVisitor = currentUser && currentUser.role === 'visitante';
-    const isManagementRoute = ['users', 'sectors', 'orders', 'finance', 'new-setor', 'new-falecido', 'new-financeiro', 'setor-vagas'].includes(route);
+    const isManagementRoute = ['users', 'sectors', 'orders', 'finance', 'new-user', 'new-setor', 'new-falecido', 'new-financeiro', 'setor-vagas'].includes(route);
 
     // Bloquear rotas de gerenciamento para visitantes
     if (isManagementRoute && !isAdmin) {
@@ -1260,12 +1211,12 @@ function render(){
         return;
     }
 
-    // // Permitir visitantes acessarem apenas a rota de falecidos
-    // if (route === 'falecidos' || route === 'dead') {
-    //     app.innerHTML = renderFalecidos();
-    //     setTimeout(() => bindFalecidos(app), 0);
-    //     return;
-    // }
+    // Permitir visitantes acessarem apenas a rota de falecidos
+    if (route === 'falecidos' || route === 'dead') {
+        app.innerHTML = renderFalecidos();
+        setTimeout(() => bindFalecidos(app), 0);
+        return;
+    }
 
     // ROTAS DE CRIAÇÃO (NOVAS)
     if(route === 'new-user'){ app.innerHTML = renderNewUser(); setTimeout(()=>bindNewUser(app),0); return; }
@@ -1277,7 +1228,7 @@ function render(){
     if(route === 'users'){ app.innerHTML = renderUsers(); setTimeout(()=>bindUsers(app),0); return; }
     if(route === 'setores' || route === 'sectors'){ app.innerHTML = renderSetores(); setTimeout(()=>bindSetores(app),0); return; }
     if(route === 'falecidos' || route === 'dead'){ app.innerHTML = renderFalecidos(); setTimeout(()=>bindFalecidos(app),0); return; }
-    if(route === 'orders' || route === 'pedidos'){ app.innerHTML = renderPedidos(); setTimeout(()=>bindPedidos(app),0); return; }
+    if(route === 'orders'){ app.innerHTML = renderOrders(); setTimeout(()=>bindOrders(app),0); return; }
     if(route === 'financeiro' || route=== 'finance'){ app.innerHTML = renderFinanceiro(); setTimeout(()=>bindFinanceiro(app),0); return; }
     if(route === 'pedidos'){ app.innerHTML = renderPedidos(); setTimeout(()=>bindPedidos(app),0); return; }
     
@@ -1338,4 +1289,15 @@ async function associatePlanoToFalecido(falecidoId, planoId) {
 // Função para obter os planos associados a um falecido
 async function getPlanosByFalecido(falecidoId) {
     return api(`falecidos/${falecidoId}/planos`);
+}
+
+/**
+ * Função para aplicar hash e salt ao CPF antes de enviá-lo ao backend.
+ * @param {string} cpf - O CPF a ser protegido.
+ * @returns {string} - O CPF protegido com hash e salt.
+ */
+function hashCPF(cpf) {
+    const salt = CryptoJS.lib.WordArray.random(16); // Gera um salt aleatório
+    const hash = CryptoJS.PBKDF2(cpf, salt, { keySize: 256 / 32, iterations: 1000 });
+    return `${salt.toString(CryptoJS.enc.Hex)}:${hash.toString(CryptoJS.enc.Hex)}`;
 }

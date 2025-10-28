@@ -736,18 +736,19 @@ def financeiro_collection():
     if request.method == 'POST':
         p = request.json or {}
         # --- Validação dos dados de entrada ---
-        tipo = p.get('tipo')
+        tipo_str = p.get('tipo')
         valor_str = p.get('valor')
         data_str = p.get('data')
 
-        if not tipo or valor_str is None or not data_str:
+        if not tipo_str or valor_str is None or not data_str:
             return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
         
         try:
+            tipo = tipo_str.lower() # Garante que o tipo seja minúsculo
             valor = float(valor_str)
             # Converte a string de data (YYYY-MM-DD) para um objeto date
             data = datetime.datetime.strptime(data_str, '%Y-%m-%d').date()
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, AttributeError):
             return jsonify({'error': 'O campo "valor" deve ser um número e "data" deve estar no formato AAAA-MM-DD.'}), 400
         # --- Fim da validação ---
 
@@ -782,18 +783,19 @@ def financeiro_single(fid):
         if request.method == 'PUT':
             p = request.json or {}
             # --- Validação dos dados de entrada ---
-            tipo = p.get('tipo')
+            tipo_str = p.get('tipo')
             valor_str = p.get('valor')
             data_str = p.get('data')
 
-            if not tipo or valor_str is None or not data_str:
+            if not tipo_str or valor_str is None or not data_str:
                 return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
             
             try:
+                tipo = tipo_str.lower() # Garante que o tipo seja minúsculo
                 valor = float(valor_str)
                 # Converte a string de data (YYYY-MM-DD) para um objeto date
                 data = datetime.datetime.strptime(data_str, '%Y-%m-%d').date()
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, AttributeError):
                 return jsonify({'error': 'O campo "valor" deve ser um número e "data" deve estar no formato AAAA-MM-DD.'}), 400
             # --- Fim da validação ---
 
