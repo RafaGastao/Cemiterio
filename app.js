@@ -631,7 +631,7 @@ async function bindFalecidos(container) {
         let html = falecidos.map(f => `
             <div class="list-item falecido-item">
                 <div>
-                    <strong>${f.name}</strong> (Nasc: ${f.anoNascimento} - Morte: ${f.anoMorte})<br>
+                    <strong>${f.name}</strong> (Nasc: ${f.anonascimento} - Morte: ${f.anomorte})<br>
                     <small>Setor: ${f.setor_nome || 'Não atribuído'}, Vaga: ${f.vaga || 'N/A'}</small><br>
                     <small>Planos: ${f.planos || 'Nenhum'}</small><br>
                     <small>Usuários Associados: ${f.usuarios_associados || 'Nenhum'}</small>
@@ -716,20 +716,13 @@ async function bindPedidos(container) {
         }
 
         let html = pedidos.map(p => {
-            let statusAprovacao = 'Pendente';
-            if (p.aprovado === 1) {
-                statusAprovacao = 'Aprovado';
-            } else if (p.aprovado === 0) {
-                statusAprovacao = 'Rejeitado';
-            }
-
+            // Removida a lógica de statusAprovacao pois o campo não vem mais na listagem
             return `
             <div class="list-item pedido-item">
                 <div>
                     <strong>Pedido #${p.id}</strong> (Total: R$ ${Number(p.total).toFixed(2)})<br>
                     <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small><br>
-                    <small>Aprovação: ${statusAprovacao}</small><br>
-                    ${currentUser?.role === 'admin' && p.aprovado === null ? `
+                    ${currentUser?.role === 'admin' ? `
                         <div class="actions">
                             <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
                             <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
@@ -829,6 +822,13 @@ async function bindOrders(container){
 async function bindFinanceiro(container) {
     const list = container.querySelector('#financeiroList');
     if (!list) return;
+
+    // Adiciona o bind para o botão "Novo Registro"
+    const newBtn = container.querySelector('button[data-route="new-financeiro"]');
+    if (newBtn) {
+        newBtn.onclick = () => { location.hash = '#new-financeiro'; render(); };
+    }
+
     try {
         const items = await getFinanceiro();
         let html = items.map(i => `

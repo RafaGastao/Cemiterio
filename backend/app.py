@@ -659,14 +659,14 @@ def pedidos_collection():
             if g.current_user and g.current_user['role'] == 'admin':
                 # Admins podem ver todos os pedidos
                 cur.execute("""
-                    SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at, p.aprovado
+                    SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at
                     FROM pedidos p
                     LEFT JOIN usuarios u ON p.user_id = u.id
                 """)
             elif g.current_user:
                 # Usuários comuns veem apenas os próprios pedidos
                 cur.execute("""
-                    SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at, p.aprovado
+                    SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at
                     FROM pedidos p
                     LEFT JOIN usuarios u ON p.user_id = u.id
                     WHERE p.user_id = %s
