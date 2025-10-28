@@ -756,17 +756,32 @@ def financeiro_single(fid):
     conn = get_db_connection();
     if not conn: return jsonify({'error':'db'}),500
     cur = conn.cursor()
-    if request.method == 'GET':
-        cur.execute('SELECT id, tipo, descricao, valor, data FROM financeiro WHERE id=%s', (fid,))
-        row = cur.fetchone();
-        if not row: cur.close(); conn.close(); return jsonify({}),404
-        cur.close(); conn.close(); return jsonify(row)
-    if request.method == 'PUT':
-        p = request.json or {}
-        cur.execute('UPDATE financeiro SET tipo=%s, descricao=%s, valor=%s, data=%s WHERE id=%s', (p.get('tipo'), p.get('descricao'), p.get('valor'), p.get('data'), fid))
-        conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
-    if request.method == 'DELETE':
-        cur.execute('DELETE FROM financeiro WHERE id=%s', (fid,)); conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
+    try:
+        if request.method == 'GET':
+            cur.execute('SELECT id, tipo, descricao, valor, data FROM financeiro WHERE id=%s', (fid,))
+            row = cur.fetchone();
+            if not row: return jsonify({}),404
+            return jsonify(row)
+        
+        if request.method == 'PUT':
+            p = request.json or {}
+            cur.execute('UPDATE financeiro SET tipo=%s, descricao=%s, valor=%s, data=%s WHERE id=%s', 
+                        (p.get('tipo'), p.get('descricao'), p.get('valor'), p.get('data'), fid))
+            conn.commit()
+            return jsonify({'ok':True})
+
+        if request.method == 'DELETE':
+            cur.execute('DELETE FROM financeiro WHERE id=%s', (fid,)); 
+            conn.commit()
+            return jsonify({'ok':True})
+            
+    except Exception as e:
+        conn.rollback()
+        print(f"Erro na operação com financeiro ID {fid}: {e}")
+        return jsonify({'error': 'Erro interno no servidor'}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 
 if __name__ == '__main__':
