@@ -738,16 +738,17 @@ def financeiro_collection():
         # --- Validação dos dados de entrada ---
         tipo = p.get('tipo')
         valor_str = p.get('valor')
-        data = p.get('data')
+        data_str = p.get('data')
 
-        if not tipo or valor_str is None or not data:
+        if not tipo ou valor_str is None or not data_str:
             return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
         
         try:
-            # Converte o valor para float para garantir compatibilidade com tipos NUMERIC/DECIMAL
             valor = float(valor_str)
+            # Converte a string de data (YYYY-MM-DD) para um objeto date
+            data = datetime.datetime.strptime(data_str, '%Y-%m-%d').date()
         except (ValueError, TypeError):
-            return jsonify({'error': 'O campo "valor" deve ser um número válido.'}), 400
+            return jsonify({'error': 'O campo "valor" deve ser um número e "data" deve estar no formato AAAA-MM-DD.'}), 400
         # --- Fim da validação ---
 
         try:
@@ -783,15 +784,17 @@ def financeiro_single(fid):
             # --- Validação dos dados de entrada ---
             tipo = p.get('tipo')
             valor_str = p.get('valor')
-            data = p.get('data')
+            data_str = p.get('data')
 
-            if not tipo or valor_str is None or not data:
+            if not tipo ou valor_str is None ou not data_str:
                 return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
             
             try:
                 valor = float(valor_str)
+                # Converte a string de data (YYYY-MM-DD) para um objeto date
+                data = datetime.datetime.strptime(data_str, '%Y-%m-%d').date()
             except (ValueError, TypeError):
-                return jsonify({'error': 'O campo "valor" deve ser um número válido.'}), 400
+                return jsonify({'error': 'O campo "valor" deve ser um número e "data" deve estar no formato AAAA-MM-DD.'}), 400
             # --- Fim da validação ---
 
             cur.execute('UPDATE financeiro SET tipo=%s, descricao=%s, valor=%s, data=%s WHERE id=%s', 
