@@ -740,7 +740,7 @@ def financeiro_collection():
         valor_str = p.get('valor')
         data_str = p.get('data')
 
-        if not tipo ou valor_str is None or not data_str:
+        if not tipo or valor_str is None or not data_str:
             return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
         
         try:
@@ -786,7 +786,7 @@ def financeiro_single(fid):
             valor_str = p.get('valor')
             data_str = p.get('data')
 
-            if not tipo ou valor_str is None ou not data_str:
+            if not tipo or valor_str is None or not data_str:
                 return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
             
             try:
