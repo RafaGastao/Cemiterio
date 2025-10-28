@@ -737,11 +737,17 @@ def financeiro_collection():
         p = request.json or {}
         # --- Validação dos dados de entrada ---
         tipo = p.get('tipo')
-        valor = p.get('valor')
+        valor_str = p.get('valor')
         data = p.get('data')
 
-        if not tipo or not valor or not data:
+        if not tipo or valor_str is None or not data:
             return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
+        
+        try:
+            # Converte o valor para float para garantir compatibilidade com tipos NUMERIC/DECIMAL
+            valor = float(valor_str)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'O campo "valor" deve ser um número válido.'}), 400
         # --- Fim da validação ---
 
         try:
