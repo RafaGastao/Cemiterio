@@ -761,7 +761,7 @@ def financeiro_collection():
         except Exception as e:
             conn.rollback()  # Desfaz a transação em caso de erro
             print(f"Erro ao criar registro financeiro: {e}")  # Log do erro no console do backend
-            return jsonify({'error': 'Erro interno ao salvar no banco de dados. Verifique o formato dos dados.'}), 500
+            return jsonify({'error': 'Erro interno ao salvar no banco de dados. Verifique o formato dos dados e os nomes das colunas.'}), 500
         finally:
             cur.close()
             conn.close()
@@ -780,8 +780,22 @@ def financeiro_single(fid):
         
         if request.method == 'PUT':
             p = request.json or {}
+            # --- Validação dos dados de entrada ---
+            tipo = p.get('tipo')
+            valor_str = p.get('valor')
+            data = p.get('data')
+
+            if not tipo or valor_str is None or not data:
+                return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
+            
+            try:
+                valor = float(valor_str)
+            except (ValueError, TypeError):
+                return jsonify({'error': 'O campo "valor" deve ser um número válido.'}), 400
+            # --- Fim da validação ---
+
             cur.execute('UPDATE financeiro SET tipo=%s, descricao=%s, valor=%s, data=%s WHERE id=%s', 
-                        (p.get('tipo'), p.get('descricao'), p.get('valor'), p.get('data'), fid))
+                        (tipo, p.get('descricao'), valor, data, fid))
             conn.commit()
             return jsonify({'ok':True})
 
