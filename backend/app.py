@@ -323,11 +323,11 @@ def falecidos_collection():
         try:
             payload = request.json or {}
             cur.execute("""
-                INSERT INTO falecidos (name, anoNascimento, anoMorte, setor, vaga)
+                INSERT INTO falecidos (name, anonascimento, anomorte, setor, vaga)
                 VALUES (%s, %s, %s, %s, %s) RETURNING id
             """, (
                 payload.get('name'),
-                payload.get('anoNascimento'),
+                payload.get('anoNascimento'), # Frontend envia com 'N' e 'M' maiúsculos
                 payload.get('anoMorte'),
                 payload.get('setor'),
                 payload.get('vaga')
@@ -346,7 +346,7 @@ def falecidos_collection():
         if g.current_user and g.current_user['role'] == 'visitante':
             # Visitantes só podem ver falecidos associados a eles
             cur.execute("""
-                SELECT f.id, f.name, f.anoNascimento, f.anoMorte, s.name AS setor_nome, f.vaga,
+                SELECT f.id, f.name, f.anonascimento, f.anomorte, s.name AS setor_nome, f.vaga,
                        COALESCE(STRING_AGG(DISTINCT p.nome, ', '), 'Nenhum') AS planos,
                        COALESCE(STRING_AGG(DISTINCT u.name, ', '), 'Nenhum') AS usuarios_associados
                 FROM falecidos f
@@ -361,7 +361,7 @@ def falecidos_collection():
         else:
             # Administradores podem ver todos os falecidos
             cur.execute("""
-                SELECT f.id, f.name, f.anoNascimento, f.anoMorte, s.name AS setor_nome, f.vaga,
+                SELECT f.id, f.name, f.anonascimento, f.anomorte, s.name AS setor_nome, f.vaga,
                        COALESCE(STRING_AGG(DISTINCT p.nome, ', '), 'Nenhum') AS planos,
                        COALESCE(STRING_AGG(DISTINCT u.name, ', '), 'Nenhum') AS usuarios_associados
                 FROM falecidos f
@@ -388,13 +388,13 @@ def falecidos_single(fid):
     if not conn: return jsonify({'error':'db'}),500
     cur = conn.cursor()
     if request.method == 'GET':
-        cur.execute('SELECT id, name, anoNascimento, anoMorte, setor FROM falecidos WHERE id=%s', (fid,))
+        cur.execute('SELECT id, name, anonascimento, anomorte, setor FROM falecidos WHERE id=%s', (fid,))
         row = cur.fetchone();
         if not row: cur.close(); conn.close(); return jsonify({}),404
         cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
         p = request.json or {}
-        cur.execute('UPDATE falecidos SET name=%s, anoNascimento=%s, anoMorte=%s, setor=%s WHERE id=%s',
+        cur.execute('UPDATE falecidos SET name=%s, anonascimento=%s, anomorte=%s, setor=%s WHERE id=%s',
                     (p.get('name'), p.get('anoNascimento'), p.get('anoMorte'), p.get('setor'), fid))
         conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
     if request.method == 'DELETE':
