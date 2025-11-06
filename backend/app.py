@@ -723,7 +723,7 @@ def financeiro_collection():
     
     if request.method == 'GET':
         try:
-            cur.execute('SELECT id, tipo, descricao, valor, data FROM financeiro')
+            cur.execute('SELECT id, tipo_transacao AS tipo, descricao, valor, data FROM financeiro')
             data = cur.fetchall()
             return jsonify(data)
         except Exception as e:
@@ -775,7 +775,7 @@ def financeiro_single(fid):
     cur = conn.cursor()
     try:
         if request.method == 'GET':
-            cur.execute('SELECT id, tipo, descricao, valor, data FROM financeiro WHERE id=%s', (fid,))
+            cur.execute('SELECT id, tipo_transacao AS tipo, descricao, valor, data FROM financeiro WHERE id=%s', (fid,))
             row = cur.fetchone();
             if not row: return jsonify({}),404
             return jsonify(row)
@@ -783,7 +783,7 @@ def financeiro_single(fid):
         if request.method == 'PUT':
             p = request.json or {}
             # --- Validação dos dados de entrada ---
-            tipo_str = p.get('tipo_transacao')
+            tipo_str = p.get('tipo')
             valor_str = p.get('valor')
             data_str = p.get('data')
 
@@ -799,7 +799,7 @@ def financeiro_single(fid):
                 return jsonify({'error': 'O campo "valor" deve ser um número e "data" deve estar no formato AAAA-MM-DD.'}), 400
             # --- Fim da validação ---
 
-            cur.execute('UPDATE financeiro SET tipo=%s, descricao=%s, valor=%s, data=%s WHERE id=%s', 
+            cur.execute('UPDATE financeiro SET tipo_transacao=%s, descricao=%s, valor=%s, data=%s WHERE id=%s', 
                         (tipo, p.get('descricao'), valor, data, fid))
             conn.commit()
             return jsonify({'ok':True})

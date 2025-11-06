@@ -3,7 +3,6 @@
  * - Frontend talks to backend via API_BASE
  */
 
-
 const API_BASE = 'https://cemiterio-0elv.onrender.com/api';
 
 let token = localStorage.getItem('cem_token') || null;
@@ -596,12 +595,6 @@ async function bindSetores(container){
 async function bindFalecidos(container) {
     const list = container.querySelector('#falecidosList');
     if (!list) return;
-}
-
-async function bindPedidos(container) {
-    const list = container.querySelector('#pedidosList');
-    if (!list) return;
-
     // Verifique se o usuário está logado
     if (!isUserLoggedIn()) {
         list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os pedidos.</p>';
@@ -678,6 +671,14 @@ async function bindPedidos(container) {
     } catch (e) {
         list.innerHTML = '<p style="color:red">Erro ao carregar falecidos</p>';
     }
+
+}
+
+async function bindPedidos(container) {
+    const list = container.querySelector('#pedidosList');
+    if (!list) return;
+
+    
 }
 
 // Nova função para renderizar o formulário de edição de falecidos
