@@ -498,6 +498,13 @@ async function bindCheckout(container){
 async function bindUsers(container){
     const list = container.querySelector('#usersList');
     if(!list) return;
+
+    // Adicionar binding para o botão 'Novo Usuário'
+    const newUserBtn = container.querySelector('button[data-route="new-user"]');
+    if (newUserBtn) {
+        newUserBtn.onclick = () => { location.hash = '#new-user'; render(); };
+    }
+
     try{
         const users = await getUsers();
         let html = users.map(u => `
