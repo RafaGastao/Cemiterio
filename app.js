@@ -595,11 +595,13 @@ async function bindSetores(container){
 async function bindFalecidos(container) {
     const list = container.querySelector('#falecidosList');
     if (!list) return;
-    // Verifique se o usuário está logado
-    if (!isUserLoggedIn()) {
-        list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os pedidos.</p>';
-        return;
+
+    // Adicionar binding para o botão 'Adicionar Falecido'
+    const newFalecidoBtn = container.querySelector('button[data-route="new-falecido"]');
+    if (newFalecidoBtn) {
+        newFalecidoBtn.onclick = () => { location.hash = '#new-falecido'; render(); };
     }
+
     // Verifique se o usuário está logado
     if (!currentUser) {
         list.innerHTML = '<p style="color:red">Você precisa estar logado para visualizar os falecidos.</p>';
@@ -611,7 +613,7 @@ async function bindFalecidos(container) {
         let html = falecidos.map(f => `
             <div class="list-item falecido-item">
                 <div>
-                    <strong>${f.name}</strong> (Nasc: ${f.anoNascimento} - Morte: ${f.anoMorte})<br>
+                    <strong>${f.name}</strong> (Nasc: ${f.anonascimento} - Morte: ${f.anomorte})<br>
                     <small>Setor: ${f.setor_nome || 'Não atribuído'}, Vaga: ${f.vaga || 'N/A'}</small><br>
                     <small>Planos: ${f.planos || 'Nenhum'}</small><br>
                     <small>Usuários Associados: ${f.usuarios_associados || 'Nenhum'}</small>
@@ -669,16 +671,61 @@ async function bindFalecidos(container) {
             });
         }
     } catch (e) {
-        list.innerHTML = '<p style="color:red">Erro ao carregar falecidos</p>';
+        list.innerHTML = '<p style="color:red">Erro ao carregar falecidos: ' + e.message + '</p>';
     }
-
 }
 
 async function bindPedidos(container) {
     const list = container.querySelector('#pedidosList');
     if (!list) return;
 
-    
+    try {
+        const pedidos = await getPedidos();
+        let html = pedidos.map(p => `
+            <div class="list-item pedido-item">
+                <div>
+                    <strong>Pedido #${p.id}</strong> (Total: R$ ${Number(p.total).toFixed(2)})<br>
+                    <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small><br>
+                    <small>Aprovado: ${p.aprovado ? 'Sim' : 'Não'}</small><br>
+                    ${currentUser?.role === 'admin' ? `
+                        <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
+                        <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+        list.innerHTML = html;
+
+        if (currentUser?.role === 'admin') {
+            list.querySelectorAll('[data-aprovar]').forEach(btn => {
+                btn.onclick = async () => {
+                    const pedidoId = btn.dataset.aprovar;
+                    try {
+                        await updatePedidoAprovacao(pedidoId, true);
+                        alert('Pedido aprovado com sucesso!');
+                        render();
+                    } catch (e) {
+                        alert('Erro ao aprovar pedido: ' + e.message);
+                    }
+                };
+            });
+
+            list.querySelectorAll('[data-rejeitar]').forEach(btn => {
+                btn.onclick = async () => {
+                    const pedidoId = btn.dataset.rejeitar;
+                    try {
+                        await updatePedidoAprovacao(pedidoId, false);
+                        alert('Pedido rejeitado com sucesso!');
+                        render();
+                    } catch (e) {
+                        alert('Erro ao rejeitar pedido: ' + e.message);
+                    }
+                };
+            });
+        }
+    } catch (e) {
+        list.innerHTML = '<p style="color:red">Erro ao carregar pedidos</p>';
+    }
 }
 
 // Nova função para renderizar o formulário de edição de falecidos
@@ -735,59 +782,6 @@ async function bindOrders(container){
         `).join('');
         list.innerHTML = html;
     }catch(e){
-        list.innerHTML = '<p style="color:red">Erro ao carregar pedidos</p>';
-    }
-}
-
-async function bindPedidos(container) {
-    const list = container.querySelector('#pedidosList');
-    if (!list) return;
-
-    try {
-        const pedidos = await getPedidos();
-        let html = pedidos.map(p => `
-            <div class="list-item pedido-item">
-                <div>
-                    <strong>Pedido #${p.id}</strong> (Total: R$ ${Number(p.total).toFixed(2)})<br>
-                    <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small><br>
-                    <small>Aprovado: ${p.aprovado ? 'Sim' : 'Não'}</small><br>
-                    ${currentUser?.role === 'admin' ? `
-                        <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
-                        <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
-                    ` : ''}
-                </div>
-            </div>
-        `).join('');
-        list.innerHTML = html;
-
-        if (currentUser?.role === 'admin') {
-            list.querySelectorAll('[data-aprovar]').forEach(btn => {
-                btn.onclick = async () => {
-                    const pedidoId = btn.dataset.aprovar;
-                    try {
-                        await updatePedidoAprovacao(pedidoId, true);
-                        alert('Pedido aprovado com sucesso!');
-                        render();
-                    } catch (e) {
-                        alert('Erro ao aprovar pedido: ' + e.message);
-                    }
-                };
-            });
-
-            list.querySelectorAll('[data-rejeitar]').forEach(btn => {
-                btn.onclick = async () => {
-                    const pedidoId = btn.dataset.rejeitar;
-                    try {
-                        await updatePedidoAprovacao(pedidoId, false);
-                        alert('Pedido rejeitado com sucesso!');
-                        render();
-                    } catch (e) {
-                        alert('Erro ao rejeitar pedido: ' + e.message);
-                    }
-                };
-            });
-        }
-    } catch (e) {
         list.innerHTML = '<p style="color:red">Erro ao carregar pedidos</p>';
     }
 }
