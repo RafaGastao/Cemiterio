@@ -3,19 +3,8 @@
  * - Frontend talks to backend via API_BASE
  */
 
-const express = require('express')
-const app = express()
-const port = process.env.PORT || 4000
 
-app.get('/', (req, res) => {
-  res.send('Hello World!')
-})
-
-app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
-})
-
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'https://cemiterio-0elv.onrender.com';
 
 let token = localStorage.getItem('cem_token') || null;
 let currentUser = null; // populated after successful login
