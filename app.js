@@ -4,7 +4,7 @@
  */
 
 
-const API_BASE = 'https://cemiterio-0elv.onrender.com';
+const API_BASE = 'https://cemiterio-0elv.onrender.com/api';
 
 let token = localStorage.getItem('cem_token') || null;
 let currentUser = null; // populated after successful login
