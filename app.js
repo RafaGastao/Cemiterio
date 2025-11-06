@@ -789,6 +789,13 @@ async function bindOrders(container){
 async function bindFinanceiro(container) {
     const list = container.querySelector('#financeiroList');
     if (!list) return;
+
+    // Adicionar binding para o botão 'Novo Registro'
+    const newRegistroBtn = container.querySelector('button[data-route="new-financeiro"]');
+    if (newRegistroBtn) {
+        newRegistroBtn.onclick = () => { location.hash = '#new-financeiro'; render(); };
+    }
+
     try {
         const items = await getFinanceiro();
         let html = items.map(i => `
