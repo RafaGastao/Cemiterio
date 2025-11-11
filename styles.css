@@ -58,6 +58,45 @@ nav button.active {
   font-weight: bold;
 }
 
+/* --- Estilos do Menu Dropdown --- */
+.nav-item {
+  position: relative;
+}
+
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background-color: var(--primary);
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  min-width: 200px;
+  z-index: 1000;
+  padding: 0.5rem 0;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.dropdown-menu button {
+  width: 100%;
+  text-align: left;
+  border-radius: 0;
+}
+
+.nav-item.open .dropdown-menu {
+  display: block;
+}
+
+/* --- Estilos do Menu Hambúrguer --- */
+.hamburger-menu {
+  display: none; /* Oculto em telas grandes */
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
 /* user controls (login/logout display) */
 .user-controls {
   margin-left: auto;
@@ -575,9 +614,42 @@ form .footer-actions {
 }
 
 /* Responsividade */
+@media (max-width: 992px) { /* Ponto de quebra para o menu hambúrguer */
+  .hamburger-menu {
+    display: block;
+  }
+
+  nav {
+    display: none; /* Esconde a navegação principal */
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: var(--primary);
+    flex-direction: column;
+    align-items: stretch;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  }
+
+  nav.open {
+    display: flex; /* Mostra a navegação quando aberta */
+  }
+
+  .nav-item {
+    width: 100%;
+  }
+
+  .dropdown-menu {
+    position: static; /* Remove o posicionamento absoluto */
+    box-shadow: none;
+    border-radius: 0;
+    background-color: rgba(0,0,0,0.1);
+    padding-left: 1rem; /* Indentação para sub-itens */
+  }
+}
+
 @media (max-width: 600px) {
-  header { flex-direction: column; align-items: flex-start; }
-  nav button { margin: 0.25rem 0; }
+  header { flex-direction: row; align-items: center; flex-wrap: wrap; }
   main { padding: 1rem; }
   .user-controls { margin-left: 0; }
 

@@ -3,36 +3,29 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Cemitério </title>
+  <title>Cemitério Online</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header>
     <div class="logo">
-      <h1>🪦 Cemitério</h1>
+      <h1><i class="icon-tombstone"></i> Cemitério</h1>
     </div>
     <nav id="mainNav">
-      <button data-route="home">Início</button>
-      <button data-route="users">Usuários</button>
-      <button data-route="sectors">Setores</button>
-      <button data-route="dead">Usuários Falecidos</button>
-      <button data-route="finance">Financeiro</button>
-      <button data-route="catalog">Catálogo</button>
-      <button data-route="setor-vagas">Vagas por Setor</button>
-      <button data-route="pedidos">Pedidos</button> <!-- Novo botão para pedidos -->
+      <!-- O conteúdo da navegação será gerado pelo app.js -->
     </nav>
-
     <div id="userControls" class="user-controls">
-      <!-- preenchido por app.js: mostra login / usuário logado / logout -->
+      <!-- Controles de usuário (login/logout) -->
     </div>
+    <button id="hamburgerMenu" class="hamburger-menu">&#9776;</button>
   </header>
 
   <main id="app">
-    <!-- Content injected by app.js -->
+    <!-- Conteúdo principal da aplicação -->
   </main>
 
   <footer>
-    <small>Sistema conectado ao backend Python — autenticação via token</small>
+    <p>&copy; 2024 Cemitério Online. Todos os direitos reservados.</p>
   </footer>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
   <script src="app.js"></script>

@@ -743,8 +743,13 @@ def financeiro_collection():
         if not tipo_str or valor_str is None or not data_str:
             return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
         
+        # Mapeamento do tipo de transação
+        tipo_map = {'receita': 'entrada', 'despesa': 'saida'}
+        tipo_db = tipo_map.get(tipo_str.lower())
+        if not tipo_db:
+            return jsonify({'error': 'O campo "tipo" deve ser "receita" ou "despesa".'}), 400
+
         try:
-            tipo = tipo_str.lower() # Garante que o tipo seja minúsculo
             valor = float(valor_str)
             # Converte a string de data (YYYY-MM-DD) para um objeto date
             data = datetime.datetime.strptime(data_str, '%Y-%m-%d').date()
@@ -755,7 +760,7 @@ def financeiro_collection():
         try:
             cur.execute(
                 'INSERT INTO financeiro (tipo, descricao, valor, data) VALUES (%s, %s, %s, %s) RETURNING id',
-                (tipo, p.get('descricao'), valor, data)
+                (tipo_db, p.get('descricao'), valor, data)
             )
             nid = cur.fetchone()['id']
             conn.commit()
@@ -790,8 +795,13 @@ def financeiro_single(fid):
             if not tipo_str or valor_str is None or not data_str:
                 return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
             
+            # Mapeamento do tipo de transação
+            tipo_map = {'receita': 'entrada', 'despesa': 'saida'}
+            tipo_db = tipo_map.get(tipo_str.lower())
+            if not tipo_db:
+                return jsonify({'error': 'O campo "tipo" deve ser "receita" ou "despesa".'}), 400
+
             try:
-                tipo = tipo_str.lower() # Garante que o tipo seja minúsculo
                 valor = float(valor_str)
                 # Converte a string de data (YYYY-MM-DD) para um objeto date
                 data = datetime.datetime.strptime(data_str, '%Y-%m-%d').date()
@@ -800,7 +810,7 @@ def financeiro_single(fid):
             # --- Fim da validação ---
 
             cur.execute('UPDATE financeiro SET tipo=%s, descricao=%s, valor=%s, data=%s WHERE id=%s', 
-                        (tipo, p.get('descricao'), valor, data, fid))
+                        (tipo_db, p.get('descricao'), valor, data, fid))
             conn.commit()
             return jsonify({'ok':True})
 

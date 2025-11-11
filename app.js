@@ -138,7 +138,10 @@ function renderLogin(){
             <h2>Entrar</h2>
             <div class="form-row"><label>Usuário</label><input id="loginUser" class="input"/></div>
             <div class="form-row"><label>Senha</label><input id="loginPass" type="password" class="input"/></div>
-            <div class="footer-actions"><button id="doLogin" class="btn btn-primary">Entrar</button></div>
+            <div class="footer-actions">
+                <button id="doLogin" class="btn btn-primary">Entrar</button>
+                <button id="goRegister" class="btn btn-ghost">Criar Conta</button>
+            </div>
         </div>`;
 }
 
@@ -407,6 +410,14 @@ async function bindLogin(container){
             render();
         }catch(e){ alert('Erro: ' + e.message); }
     };
+
+    const registerBtn = el('goRegister');
+    if (registerBtn) {
+        registerBtn.onclick = () => {
+            location.hash = '#new-user';
+            render();
+        };
+    }
 }
 
 async function bindCatalog(container){
@@ -1180,6 +1191,56 @@ function renderEditSetor(setor) {
     };
 }
 
+// --- NOVA FUNÇÃO PARA RENDERIZAR A NAVEGAÇÃO ---
+function renderNavigation() {
+    const nav = document.getElementById('mainNav');
+    if (!nav) return;
+
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    let navHtml = '';
+
+    // Botão Início (sempre visível)
+    navHtml += `<button data-route="home">Início</button>`;
+
+    if (isAdmin) {
+        // Menu Gestão
+        navHtml += `
+            <div class="nav-item">
+                <button class="nav-toggle">Gestão</button>
+                <div class="dropdown-menu">
+                    <button data-route="users">Usuários</button>
+                    <button data-route="falecidos">Falecidos</button>
+                    <button data-route="setores">Setores</button>
+                    <button data-route="setor-vagas">Vagas por Setor</button>
+                </div>
+            </div>
+        `;
+        // Menu Comercial
+        navHtml += `
+            <div class="nav-item">
+                <button class="nav-toggle">Comercial</button>
+                <div class="dropdown-menu">
+                    <button data-route="financeiro">Financeiro</button>
+                    <button data-route="catalog">Catálogo</button>
+                    <button data-route="pedidos">Pedidos</button>
+                </div>
+            </div>
+        `;
+    } else if (currentUser) {
+        // Menu para Visitantes
+        navHtml += `<button data-route="falecidos">Meus Falecidos</button>`;
+        navHtml += `<button data-route="catalog">Catálogo</button>`;
+        navHtml += `<button data-route="pedidos">Meus Pedidos</button>`;
+    } else {
+        // Menu para não logados
+        navHtml += `<button data-route="catalog">Catálogo</button>`;
+    }
+
+    nav.innerHTML = navHtml;
+    bindNavigation(); // Associa os eventos aos novos botões
+}
+
+
 // Header (User Controls)
 function renderHeader(){
     const c = document.getElementById('userControls'); if(!c) return;
@@ -1192,16 +1253,11 @@ function renderHeader(){
     } else {
         const name = document.createElement('div'); name.className='user-name'; name.textContent = currentUser.name || currentUser.username || 'Usuário'; c.appendChild(name);
         
-        if (isAdmin) {
-             const adminBtn = document.createElement('button'); 
-             adminBtn.className='btn btn-ghost'; 
-             adminBtn.textContent='Admin'; 
-             adminBtn.onclick = ()=>{ location.hash = '#users'; render(); }; 
-             c.appendChild(adminBtn);
-        }
-
+        // O botão Admin foi removido daqui pois a navegação já é controlada pelo role
+        
         const out = document.createElement('button'); out.className='btn btn-ghost'; out.textContent='Sair'; out.onclick = ()=>{ token=null; localStorage.removeItem('cem_token'); currentUser=null; location.hash = '#catalog'; render(); }; c.appendChild(out);
     }
+    renderNavigation(); // Renderiza a navegação principal
 }
 
 // Router - ATUALIZADO com Novas Rotas de Criação (new-X)
@@ -1272,17 +1328,60 @@ function render(){
     app.innerHTML = `<div class="card"><h2>Não encontrado</h2></div>`;
 }
 
-// Initialize nav bindings
-document.addEventListener('DOMContentLoaded', () => {
+// --- NOVA FUNÇÃO PARA BIND DOS MENUS ---
+function bindNavigation() {
     const nav = document.getElementById('mainNav');
-    
+    if (!nav) return;
 
-    document.querySelectorAll('nav button[data-route]').forEach(b => {
+    // Eventos para os botões de rota
+    nav.querySelectorAll('button[data-route]').forEach(b => {
         b.onclick = () => {
             location.hash = b.dataset.route;
             render();
+            // Fecha o menu hambúrguer em mobile após clicar
+            document.getElementById('mainNav').classList.remove('open');
         };
     });
+
+    // Eventos para abrir/fechar dropdowns
+    nav.querySelectorAll('.nav-toggle').forEach(toggle => {
+        toggle.onclick = (e) => {
+            e.stopPropagation();
+            const parent = toggle.parentElement;
+            // Fecha outros dropdowns abertos
+            nav.querySelectorAll('.nav-item.open').forEach(openItem => {
+                if (openItem !== parent) {
+                    openItem.classList.remove('open');
+                }
+            });
+            // Abre ou fecha o dropdown atual
+            parent.classList.toggle('open');
+        };
+    });
+
+    // Fecha dropdown se clicar fora
+    document.addEventListener('click', (e) => {
+        if (!nav.contains(e.target)) {
+            nav.querySelectorAll('.nav-item.open').forEach(openItem => {
+                openItem.classList.remove('open');
+            });
+        }
+    });
+}
+
+
+// Initialize nav bindings
+document.addEventListener('DOMContentLoaded', () => {
+    // O bind da navegação agora é chamado dentro do renderHeader/renderNavigation
+    
+    // Bind para o menu hambúrguer
+    const hamburger = document.getElementById('hamburgerMenu');
+    const mainNav = document.getElementById('mainNav');
+    if (hamburger && mainNav) {
+        hamburger.onclick = () => {
+            mainNav.classList.toggle('open');
+        };
+    }
 
     window.addEventListener('hashchange', render);
     render();
