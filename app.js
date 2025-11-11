@@ -258,23 +258,26 @@ function renderFinanceiro() {
 
 // NOVAS VIEWS (FORMULÁRIOS DE CRIAÇÃO)
 function renderNewUser(){
+    const isAdmin = currentUser && currentUser.role === 'admin';
     return `
         <div class="card">
-            <h2>Novo Usuário</h2>
+            <h2>${isAdmin ? 'Novo Usuário' : 'Criar Conta'}</h2>
             <form id="newUserForm">
                 <div class="form-row"><label>Nome</label><input id="uName" class="input" required></div>
                 <div class="form-row"><label>Usuário (Login)</label><input id="uUser" class="input" required></div>
                 <div class="form-row"><label>Email</label><input id="uEmail" type="email" class="input"></div>
                 <div class="form-row"><label>Senha</label><input id="uPass" type="password" class="input" required></div>
+                ${isAdmin ? `
                 <div class="form-row"><label>Nível (Role)</label>
                     <select id="uRole" class="input">
                         <option value="visitante">Visitante</option>
                         <option value="admin">admin</option>
                     </select>
                 </div>
+                ` : ''}
                 <div class="footer-actions">
                     <button type="submit" class="btn btn-primary">Salvar</button>
-                    <button type="button" class="btn btn-ghost" onclick="location.hash='#users';render()">Cancelar</button>
+                    <button type="button" class="btn btn-ghost" onclick="location.hash='${isAdmin ? '#users' : '#login'}';render()">Cancelar</button>
                 </div>
             </form>
         </div>`;
@@ -387,6 +390,45 @@ function renderPedidos() {
             <h2>Pedidos Realizados</h2>
             <div id="pedidosList">Carregando...</div>
         </div>`;
+}
+
+// --- NOVAS VIEWS PARA PERFIL DE USUÁRIO ---
+function renderProfile() {
+    if (!currentUser) return renderAccessDenied();
+    return `
+        <div class="card">
+            <h2>Meu Perfil</h2>
+            <div class="profile-info">
+                <p><strong>Nome:</strong> ${currentUser.name}</p>
+                <p><strong>Usuário:</strong> ${currentUser.username}</p>
+                <p><strong>Email:</strong> ${currentUser.email}</p>
+                <p><strong>Nível:</strong> ${currentUser.role}</p>
+            </div>
+            <div class="footer-actions">
+                <button id="editProfileBtn" class="btn btn-primary">Editar Perfil</button>
+                <button id="deleteProfileBtn" class="btn btn-danger">Excluir Conta</button>
+            </div>
+        </div>
+    `;
+}
+
+function renderEditProfile() {
+    if (!currentUser) return renderAccessDenied();
+    return `
+        <div class="card">
+            <h2>Editar Perfil</h2>
+            <form id="editProfileForm">
+                <div class="form-row"><label>Nome</label><input id="uName" class="input" value="${currentUser.name}" required></div>
+                <div class="form-row"><label>Usuário (Login)</label><input id="uUser" class="input" value="${currentUser.username}" required></div>
+                <div class="form-row"><label>Email</label><input id="uEmail" type="email" class="input" value="${currentUser.email || ''}"></div>
+                <div class="form-row"><label>Nova Senha (deixe em branco para não alterar)</label><input id="uPass" type="password" class="input"></div>
+                <div class="footer-actions">
+                    <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+                    <button type="button" class="btn btn-ghost" onclick="location.hash='#profile';render()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    `;
 }
 
 // ------------------------------------
@@ -503,6 +545,72 @@ async function bindCheckout(container){
         }catch(e){ alert('Erro ao enviar pedido: '+e.message); }
     };
     const cancel = el('cancelCheckout'); if(cancel) cancel.onclick = ()=>{ location.hash = '#cart'; render(); };
+}
+
+// --- NOVOS BINDS PARA PERFIL ---
+async function bindProfile(container) {
+    if (!currentUser) return;
+
+    const editBtn = el('editProfileBtn');
+    if (editBtn) {
+        editBtn.onclick = () => {
+            location.hash = '#edit-profile';
+            render();
+        };
+    }
+
+    const deleteBtn = el('deleteProfileBtn');
+    if (deleteBtn) {
+        deleteBtn.onclick = async () => {
+            const confirmation = confirm('Tem certeza que deseja excluir sua conta? Esta ação é irreversível.');
+            if (confirmation) {
+                try {
+                    await deleteUser(currentUser.id);
+                    alert('Sua conta foi excluída com sucesso.');
+                    // Logout
+                    token = null;
+                    currentUser = null;
+                    localStorage.removeItem('cem_token');
+                    location.hash = '#login';
+                    render();
+                } catch (e) {
+                    alert('Erro ao excluir sua conta: ' + e.message);
+                }
+            }
+        };
+    }
+}
+
+async function bindEditProfile(container) {
+    const form = container.querySelector('#editProfileForm');
+    if (!form) return;
+
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        const password = el('uPass').value;
+        const payload = {
+            name: el('uName').value,
+            username: el('uUser').value,
+            email: el('uEmail').value,
+        };
+        // Só envia a senha se ela for alterada
+        if (password) {
+            payload.password = password;
+        }
+
+        try {
+            await updateUser(currentUser.id, payload);
+            alert('Perfil atualizado com sucesso! Por favor, faça login novamente.');
+            // Força o logout para que as novas informações (e token, se a senha mudou) sejam carregadas
+            token = null;
+            currentUser = null;
+            localStorage.removeItem('cem_token');
+            location.hash = '#login';
+            render();
+        } catch (e) {
+            alert('Erro ao atualizar o perfil: ' + e.message);
+        }
+    };
 }
 
 // Binds (Gerenciamento)
@@ -929,17 +1037,19 @@ async function bindNewUser(container){
     if(!form) return;
     form.onsubmit = async (e) => {
         e.preventDefault();
+        const roleSelect = el('uRole');
         const payload = {
             name: el('uName').value,
             username: el('uUser').value,
             email: el('uEmail').value,
             password: el('uPass').value,
-            role: el('uRole').value
+            role: roleSelect ? roleSelect.value : 'visitante' // Default to 'visitante' if selector is not present
         };
         try{
             await createUser(payload);
             alert('Usuário criado com sucesso!');
-            location.hash = '#users'; 
+            // Se não for admin, redireciona para o login após criar a conta
+            location.hash = (currentUser && currentUser.role === 'admin') ? '#users' : '#login'; 
             render();
         }catch(e){
             alert('Erro ao criar usuário: ' + e.message);
@@ -1253,7 +1363,12 @@ function renderHeader(){
     } else {
         const name = document.createElement('div'); name.className='user-name'; name.textContent = currentUser.name || currentUser.username || 'Usuário'; c.appendChild(name);
         
-        // O botão Admin foi removido daqui pois a navegação já é controlada pelo role
+        // Botão Meu Perfil
+        const profileBtn = document.createElement('button'); 
+        profileBtn.className='btn btn-ghost'; 
+        profileBtn.textContent='Meu Perfil'; 
+        profileBtn.onclick = ()=>{ location.hash = '#profile'; render(); }; 
+        c.appendChild(profileBtn);
         
         const out = document.createElement('button'); out.className='btn btn-ghost'; out.textContent='Sair'; out.onclick = ()=>{ token=null; localStorage.removeItem('cem_token'); currentUser=null; location.hash = '#catalog'; render(); }; c.appendChild(out);
     }
@@ -1268,9 +1383,10 @@ function render(){
 
     const isAdmin = currentUser && currentUser.role === 'admin';
     const isVisitor = currentUser && currentUser.role === 'visitante';
-    const isManagementRoute = ['users', 'sectors', 'orders', 'finance', 'new-user', 'new-setor', 'new-falecido', 'new-financeiro', 'setor-vagas'].includes(route);
+    // REMOVIDO 'new-user' da lista de rotas de gerenciamento
+    const isManagementRoute = ['users', 'sectors', 'orders', 'finance', 'new-setor', 'new-falecido', 'new-financeiro', 'setor-vagas'].includes(route);
 
-    // Bloquear rotas de gerenciamento para visitantes
+    // Bloquear rotas de gerenciamento para não administradores
     if (isManagementRoute && !isAdmin) {
         location.hash = '#access-denied';
         app.innerHTML = renderAccessDenied();
@@ -1298,6 +1414,10 @@ function render(){
     if(route === 'financeiro' || route=== 'finance'){ app.innerHTML = renderFinanceiro(); setTimeout(()=>bindFinanceiro(app),0); return; }
     if(route === 'pedidos'){ app.innerHTML = renderPedidos(); setTimeout(()=>bindPedidos(app),0); return; }
     
+    // --- NOVAS ROTAS DE PERFIL ---
+    if(route === 'profile'){ if(!currentUser){ location.hash = '#login'; render(); return; } app.innerHTML = renderProfile(); setTimeout(()=>bindProfile(app),0); return; }
+    if(route === 'edit-profile'){ if(!currentUser){ location.hash = '#login'; render(); return; } app.innerHTML = renderEditProfile(); setTimeout(()=>bindEditProfile(app),0); return; }
+
     // ROTAS DE COMPRA (ORIGINAIS)
     if(route === 'login'){ app.innerHTML = renderLogin(); setTimeout(()=>bindLogin(app),0); return; }
     if(route === 'catalog'){ app.innerHTML = renderCatalog(); setTimeout(()=>bindCatalog(app),0); return; }

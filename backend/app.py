@@ -185,6 +185,18 @@ def usuarios_single(uid):
     conn = get_db_connection()
     if not conn: return jsonify({'error':'db'}), 500
     cur = conn.cursor()
+
+    # --- VERIFICAÇÃO DE PERMISSÃO ---
+    # O usuário deve ser admin OU estar modificando o próprio perfil
+    is_admin = g.current_user and g.current_user.get('role') == 'admin'
+    is_self = g.current_user and g.current_user.get('id') == uid
+
+    if request.method in ['PUT', 'DELETE'] and not (is_admin or is_self):
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Acesso negado'}), 403
+    # --- FIM DA VERIFICAÇÃO ---
+
     if request.method == 'GET':
         cur.execute('SELECT id, name, username, email, role FROM usuarios WHERE id=%s', (uid,))
         user = cur.fetchone()
@@ -192,9 +204,24 @@ def usuarios_single(uid):
         cur.close(); conn.close(); return jsonify(user)
     if request.method == 'PUT':
         p = request.json or {}
-        hashed_password = generate_password_hash(p.get('password')) if p.get('password') else None
-        cur.execute('UPDATE usuarios SET name=%s, username=%s, email=%s, password=%s, role=%s WHERE id=%s',
-                    (p.get('name'), p.get('username'), p.get('email'), hashed_password, p.get('role'), uid))
+        
+        # Impede que usuários não-admin alterem seu próprio 'role'
+        role = p.get('role')
+        if not is_admin:
+            cur.execute('SELECT role FROM usuarios WHERE id=%s', (uid,))
+            user_role = cur.fetchone()
+            if user_role:
+                role = user_role['role'] # Mantém o role existente
+
+        # Atualiza a senha apenas se uma nova for fornecida
+        if p.get('password'):
+            hashed_password = generate_password_hash(p.get('password'))
+            cur.execute('UPDATE usuarios SET name=%s, username=%s, email=%s, password=%s, role=%s WHERE id=%s',
+                        (p.get('name'), p.get('username'), p.get('email'), hashed_password, role, uid))
+        else:
+            cur.execute('UPDATE usuarios SET name=%s, username=%s, email=%s, role=%s WHERE id=%s',
+                        (p.get('name'), p.get('username'), p.get('email'), role, uid))
+
         conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
     if request.method == 'DELETE':
         cur.execute('DELETE FROM usuarios WHERE id=%s', (uid,))
@@ -744,7 +771,7 @@ def financeiro_collection():
             return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
         
         # Mapeamento do tipo de transação
-        tipo_map = {'receita': 'entrada', 'despesa': 'saida'}
+        tipo_map = {'receita': 'Entrada', 'despesa': 'Saída'}
         tipo_db = tipo_map.get(tipo_str.lower())
         if not tipo_db:
             return jsonify({'error': 'O campo "tipo" deve ser "receita" ou "despesa".'}), 400
