@@ -275,6 +275,36 @@ textarea.input {
   margin-bottom: 1rem;
 }
 
+.terms-agreement {
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.terms-agreement input[type="checkbox"] {
+  width: auto;
+  flex-shrink: 0;
+}
+
+.terms-agreement label {
+  font-size: 0.9rem;
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.terms-agreement a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.terms-agreement a:hover {
+  text-decoration: underline;
+}
+
+.footer-actions {
+  margin-top: 1rem;
+  text-align: right;
+}
+
 .footer-actions {
   margin-top: 1rem;
   text-align: right;

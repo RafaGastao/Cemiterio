@@ -274,9 +274,18 @@ function renderNewUser(){
                         <option value="admin">admin</option>
                     </select>
                 </div>
-                ` : ''}
+                ` : `
+                <div class="form-row terms-agreement">
+                    <input type="checkbox" id="termsCheckbox">
+                    <label for="termsCheckbox">
+                        Eu li e aceito os 
+                        <a href="/termos-de-uso.html" target="_blank">Termos de Uso</a> e a 
+                        <a href="/politica-de-privacidade.html" target="_blank">Política de Privacidade</a>.
+                    </label>
+                </div>
+                `}
                 <div class="footer-actions">
-                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <button type="submit" id="saveUserBtn" class="btn btn-primary" ${isAdmin ? '' : 'disabled'}>Salvar</button>
                     <button type="button" class="btn btn-ghost" onclick="location.hash='${isAdmin ? '#users' : '#login'}';render()">Cancelar</button>
                 </div>
             </form>
@@ -446,7 +455,7 @@ async function bindLogin(container){
         try{
             const res = await login(u,p);
             token = res.token;
-            currentUser = res.user || null;
+            currentUser = res.user; // res.user agora contém todos os dados
             localStorage.setItem('cem_token', token);
             location.hash = '#catalog';
             render();
@@ -1035,6 +1044,18 @@ async function deleteFinanceiro(id) {
 async function bindNewUser(container){
     const form = container.querySelector('#newUserForm');
     if(!form) return;
+
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    const termsCheckbox = el('termsCheckbox');
+    const saveBtn = el('saveUserBtn');
+
+    // Habilita/desabilita o botão de salvar para não-admins
+    if (!isAdmin && termsCheckbox && saveBtn) {
+        termsCheckbox.onchange = () => {
+            saveBtn.disabled = !termsCheckbox.checked;
+        };
+    }
+
     form.onsubmit = async (e) => {
         e.preventDefault();
         const roleSelect = el('uRole');

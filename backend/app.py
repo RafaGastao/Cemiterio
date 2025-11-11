@@ -78,7 +78,7 @@ def authenticate_user():
             return
 
         cur = conn.cursor()
-        cur.execute('SELECT id, name, role FROM usuarios WHERE id = %s', (user_id,))
+        cur.execute('SELECT id, name, username, email, role FROM usuarios WHERE id = %s', (user_id,))
         user = cur.fetchone()
         if user:
             g.current_user = user # Já é um dicionário
@@ -150,7 +150,15 @@ def login():
             app.config['SECRET_KEY'],
             algorithm='HS256'
         )
-        return jsonify({'token': token, 'user': {'id': user['id'], 'name': user['name'], 'role': user['role']}})
+        # Retorna o usuário completo, exceto a senha
+        user_data_to_return = {
+            'id': user['id'], 
+            'name': user['name'], 
+            'username': user['username'],
+            'email': user['email'],
+            'role': user['role']
+        }
+        return jsonify({'token': token, 'user': user_data_to_return})
     except Exception as e:
         print(f"Error during login: {e}")
         return jsonify({'error': 'internal server error'}), 500
@@ -740,7 +748,7 @@ def aprovar_pedido(pedido_id):
         conn.close()
 
 
-# --- Financeiro ---
+# ---   ceiro ---
 @app.route('/api/financeiro', methods=['GET','POST'])
 def financeiro_collection():
     conn = get_db_connection()
@@ -823,7 +831,7 @@ def financeiro_single(fid):
                 return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
             
             # Mapeamento do tipo de transação
-            tipo_map = {'receita': 'entrada', 'despesa': 'saida'}
+            tipo_map = {'receita': 'Entrada', 'despesa': 'Saída'}
             tipo_db = tipo_map.get(tipo_str.lower())
             if not tipo_db:
                 return jsonify({'error': 'O campo "tipo" deve ser "receita" ou "despesa".'}), 400
