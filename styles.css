@@ -131,6 +131,7 @@ main {
   padding: 2rem;
   max-width: 1200px; /* Mais espaço para o catálogo */
   margin: 0 auto;
+  min-height: calc(100vh - 150px); /* Garante que o footer fique embaixo */
 }
 
 footer {
@@ -139,6 +140,20 @@ footer {
   text-align: center;
   font-size: 0.9rem;
   color: var(--muted);
+}
+
+.footer-links {
+  margin-top: 0.5rem;
+}
+
+.footer-links a {
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.footer-links a:hover {
+  text-decoration: underline;
 }
 
 .card {
