@@ -8,6 +8,110 @@ const API_BASE = 'https://cemiterio-0elv.onrender.com/api';
 let token = localStorage.getItem('cem_access_token') || null;
 let currentUser = null; // populated after successful login
 
+// --- MÓDULO DE CRIPTOGRAFIA ---
+const cryptoModule = (() => {
+    let serverPublicKey = null;
+    let clientKeyPair = null;
+
+    // Função para importar a chave pública do servidor (formato PEM)
+    async function importServerKey(pem) {
+        const pemHeader = "-----BEGIN PUBLIC KEY-----";
+        const pemFooter = "-----END PUBLIC KEY-----";
+        const pemContents = pem.substring(pemHeader.length, pem.length - pemFooter.length).replace(/\s/g, '');
+        const binaryDer = window.atob(pemContents);
+        const binaryDerArr = new Uint8Array(binaryDer.length).map((_, i) => binaryDer.charCodeAt(i));
+        
+        return window.crypto.subtle.importKey(
+            "spki",
+            binaryDerArr.buffer,
+            { name: "RSA-OAEP", hash: "SHA-256" },
+            true,
+            ["encrypt"]
+        );
+    }
+
+    // Gera o par de chaves do cliente
+    async function generateClientKeys() {
+        clientKeyPair = await window.crypto.subtle.generateKey(
+            {
+                name: "RSA-OAEP",
+                modulusLength: 2048,
+                publicExponent: new Uint8Array([1, 0, 1]),
+                hash: "SHA-256",
+            },
+            true,
+            ["encrypt", "decrypt"]
+        );
+    }
+
+    // Exporta a chave pública do cliente para o formato PEM para enviar ao servidor
+    async function exportClientPublicKey() {
+        if (!clientKeyPair) return null;
+        const spki = await window.crypto.subtle.exportKey("spki", clientKeyPair.publicKey);
+        const spkiB64 = window.btoa(String.fromCharCode(...new Uint8Array(spki)));
+        return `-----BEGIN PUBLIC KEY-----\n${spkiB64.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
+    }
+
+    return {
+        // Inicializa o módulo: busca a chave do servidor e gera as do cliente
+        initialize: async () => {
+            try {
+                const res = await fetch(API_BASE + '/security/public-key');
+                if (!res.ok) throw new Error('Failed to fetch server public key');
+                const { public_key } = await res.json();
+                serverPublicKey = await importServerKey(public_key);
+                await generateClientKeys();
+                console.log("Crypto module initialized.");
+            } catch (e) {
+                console.error("Crypto initialization failed:", e);
+                throw e;
+            }
+        },
+        // Registra a chave pública do cliente no servidor
+        registerKeyWithServer: async () => {
+            if (!clientKeyPair) throw new Error("Client keys not generated.");
+            const publicKeyPEM = await exportClientPublicKey();
+            await api('security/register-key', {
+                method: 'POST',
+                body: JSON.stringify({ public_key: publicKeyPEM }),
+                skipEncryption: true // Flag para não criptografar esta requisição específica
+            });
+            console.log("Client public key registered with server.");
+        },
+        // Criptografa um payload para enviar ao servidor
+        encrypt: async (data) => {
+            if (!serverPublicKey) throw new Error("Server public key not available.");
+            const sessionKey = await window.crypto.subtle.generateKey({ name: "AES-CBC", length: 128 }, true, ["encrypt", "decrypt"]);
+            const iv = window.crypto.getRandomValues(new Uint8Array(16));
+
+            const encryptedKey = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, serverPublicKey, await window.crypto.subtle.exportKey("raw", sessionKey));
+            
+            const dataStr = JSON.stringify(data);
+            const encodedData = new TextEncoder().encode(dataStr);
+            const encryptedData = await window.crypto.subtle.encrypt({ name: "AES-CBC", iv }, sessionKey, encodedData);
+
+            return {
+                encrypted_key: btoa(String.fromCharCode(...new Uint8Array(encryptedKey))),
+                iv: btoa(String.fromCharCode(...iv)),
+                data: btoa(String.fromCharCode(...new Uint8Array(encryptedData)))
+            };
+        },
+        // Decriptografa um payload recebido do servidor
+        decrypt: async (encryptedPayload) => {
+            if (!clientKeyPair) throw new Error("Client keys not available.");
+            const encryptedKey = Uint8Array.from(atob(encryptedPayload.encrypted_key), c => c.charCodeAt(0));
+            const iv = Uint8Array.from(atob(encryptedPayload.iv), c => c.charCodeAt(0));
+            const data = Uint8Array.from(atob(encryptedPayload.data), c => c.charCodeAt(0));
+
+            const sessionKey = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, clientKeyPair.privateKey, encryptedKey);
+            const decryptedData = await window.crypto.subtle.decrypt({ name: "AES-CBC", iv }, await window.crypto.subtle.importKey("raw", sessionKey, "AES-CBC", true, ["decrypt"]), data);
+            
+            return JSON.parse(new TextDecoder().decode(decryptedData));
+        }
+    };
+})();
+
+
 function authHeaders(){ return token ? { 'Authorization': 'Bearer ' + token } : {}; }
 
 // --- FUNÇÃO API ATUALIZADA PARA REFRESH TOKEN ---
@@ -28,6 +132,21 @@ const processQueue = (error, token = null) => {
 async function api(path, opts = {}){
     opts.headers = Object.assign({'Content-Type':'application/json'}, authHeaders(), opts.headers || {});
     
+    // --- LÓGICA DE CRIPTOGRAFIA ---
+    const shouldEncrypt = opts.method === 'POST' || opts.method === 'PUT';
+    // Não criptografa se o corpo não existir ou se a flag 'skipEncryption' estiver presente
+    if (shouldEncrypt && opts.body && !opts.skipEncryption) {
+        try {
+            const encryptedBody = await cryptoModule.encrypt(JSON.parse(opts.body));
+            opts.body = JSON.stringify(encryptedBody);
+        } catch (e) {
+            console.error("Encryption failed:", e);
+            return Promise.reject(new Error("Falha ao criptografar a requisição."));
+        }
+    }
+    delete opts.skipEncryption; // Limpa a flag
+    // --- FIM DA LÓGICA DE CRIPTOGRAFIA ---
+
     const originalRequest = async () => fetch(API_BASE + '/' + path, opts);
 
     let res = await originalRequest();
@@ -78,14 +197,26 @@ async function api(path, opts = {}){
     }
 
     if(res.status === 204) return null;
-    const j = await res.json().catch(()=>null);
+    let j = await res.json().catch(()=>null);
+
+    // --- LÓGICA DE DECRIPTOGRAFIA ---
+    if (j && j.encrypted_key) {
+        try {
+            j = await cryptoModule.decrypt(j);
+        } catch (e) {
+            console.error("Decryption failed:", e);
+            return Promise.reject(new Error("Falha ao decriptografar a resposta do servidor."));
+        }
+    }
+    // --- FIM DA LÓGICA DE DECRIPTOGRAFIA ---
+
     if(!res.ok) throw new Error((j && j.error) ? j.error : ('HTTP ' + res.status));
     return j;
 }
 
 // Função para deslogar o usuário e limpar o estado
 function logoutUser() {
-    api('logout', { method: 'POST' }).catch(err => console.error("Logout API call failed:", err)); // Tenta invalidar o token no backend
+    api('logout', { method: 'POST', skipEncryption: true }).catch(err => console.error("Logout API call failed:", err)); // Tenta invalidar o token no backend
     token = null;
     currentUser = null;
     localStorage.removeItem('cem_access_token');
@@ -105,7 +236,9 @@ function isAdmin() {
 }
 
 // API helpers (Original)
-const login = (username, password) => api('login', { method: 'POST', body: JSON.stringify({ username, password }) });
+const login = (username, password) => api('login', { method: 'POST', body: JSON.stringify({ username, password }), skipEncryption: true });
+const forgotPassword = (email) => api('forgot-password', { method: 'POST', body: JSON.stringify({ email }), skipEncryption: true });
+const resetPassword = (token, password) => api(`reset-password/${token}`, { method: 'POST', body: JSON.stringify({ password }), skipEncryption: true });
 const getCatalog = () => api('catalogo');
 const getCart = (userId = null) => {
     const url = new URL(API_BASE + '/carrinho');
@@ -216,6 +349,9 @@ function renderLogin(){
             <div class="footer-actions">
                 <button id="doLogin" class="btn btn-primary">Entrar</button>
                 <button id="goRegister" class="btn btn-ghost">Criar Conta</button>
+            </div>
+            <div class="extra-actions">
+                <a href="#forgot-password" class="link">Esqueceu a senha?</a>
             </div>
         </div>`;
 }
@@ -515,6 +651,45 @@ function renderEditProfile() {
     `;
 }
 
+// --- NOVAS VIEWS PARA RECUPERAÇÃO DE SENHA ---
+function renderForgotPassword() {
+    return `
+        <div class="card">
+            <h2>Recuperar Senha</h2>
+            <p>Informe seu e-mail para receber o link de recuperação.</p>
+            <form id="forgotPasswordForm">
+                <div class="form-row">
+                    <label>Email</label>
+                    <input id="fpEmail" type="email" class="input" required/>
+                </div>
+                <div class="footer-actions">
+                    <button type="submit" class="btn btn-primary">Enviar</button>
+                    <button type="button" class="btn btn-ghost" onclick="location.hash='#login';render()">Cancelar</button>
+                </div>
+            </form>
+        </div>`;
+}
+
+function renderResetPassword(token) {
+    return `
+        <div class="card">
+            <h2>Redefinir Senha</h2>
+            <form id="resetPasswordForm">
+                <div class="form-row">
+                    <label>Nova Senha</label>
+                    <input id="rpPassword" type="password" class="input" required/>
+                </div>
+                <div class="form-row">
+                    <label>Confirmar Nova Senha</label>
+                    <input id="rpConfirmPassword" type="password" class="input" required/>
+                </div>
+                <div class="footer-actions">
+                    <button type="submit" class="btn btn-primary">Redefinir Senha</button>
+                </div>
+            </form>
+        </div>`;
+}
+
 // ------------------------------------
 // BINDS (Lógica e API Calls)
 // ------------------------------------
@@ -533,6 +708,10 @@ async function bindLogin(container){
             currentUser = res.user; // res.user agora contém todos os dados
             localStorage.setItem('cem_access_token', res.access_token);
             localStorage.setItem('cem_refresh_token', res.refresh_token);
+            
+            // --- REGISTRA A CHAVE PÚBLICA NO SERVIDOR APÓS O LOGIN ---
+            await cryptoModule.registerKeyWithServer();
+
             location.hash = '#catalog';
             render();
         }catch(e){ alert('Erro: ' + e.message); }
@@ -545,6 +724,48 @@ async function bindLogin(container){
             render();
         };
     }
+}
+
+// --- NOVOS BINDS PARA RECUPERAÇÃO DE SENHA ---
+async function bindForgotPassword(container) {
+    const form = el('forgotPasswordForm');
+    if (!form) return;
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        const email = el('fpEmail').value;
+        try {
+            const res = await forgotPassword(email);
+            alert(res.message);
+            location.hash = '#login';
+            render();
+        } catch (e) {
+            alert('Erro: ' + e.message);
+        }
+    };
+}
+
+async function bindResetPassword(container, token) {
+    const form = el('resetPasswordForm');
+    if (!form) return;
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        const password = el('rpPassword').value;
+        const confirmPassword = el('rpConfirmPassword').value;
+
+        if (password !== confirmPassword) {
+            alert('As senhas não coincidem.');
+            return;
+        }
+
+        try {
+            const res = await resetPassword(token, password);
+            alert(res.message);
+            location.hash = '#login';
+            render();
+        } catch (e) {
+            alert('Erro: ' + e.message);
+        }
+    };
 }
 
 async function bindCatalog(container){
@@ -882,11 +1103,16 @@ async function bindPedidos(container) {
 
     try {
         const pedidos = await getPedidos();
+        // Ordena os pedidos do mais recente para o mais antigo
+        pedidos.sort((a, b) => b.id - a.id);
+        
         let html = pedidos.map(p => `
             <div class="list-item pedido-item">
                 <div>
                     <strong>Pedido #${p.id}</strong> (Total: R$ ${Number(p.total).toFixed(2)})<br>
-                    <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small><br>
+                    <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small>
+                </div>
+                <div class="actions">
                     ${currentUser?.role === 'admin' && p.status === 'Pendente' ? `
                         <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
                         <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
@@ -924,7 +1150,7 @@ async function bindPedidos(container) {
             });
         }
     } catch (e) {
-        list.innerHTML = '<p style="color:red">Erro ao carregar pedidos</p>';
+        list.innerHTML = '<p style="color:red">Erro ao carregar pedidos: ' + e.message + '</p>';
     }
 }
 
@@ -962,28 +1188,6 @@ function renderEditFalecido(falecidoId) {
             alert('Erro ao atualizar vaga: ' + e.message);
         }
     };
-}
-
-async function bindOrders(container){
-    const list = container.querySelector('#ordersList');
-    if(!list) return;
-    try{
-        const orders = await getOrders();
-        let html = orders.map(o => `
-            <div class="list-item order-item">
-                <div>
-                    <strong>Pedido #${o.id}</strong> (Total: R$ ${Number(o.total).toFixed(2)})<br>
-                    <small>Status: ${o.status} | Cliente: ${o.nome} | Data: ${new Date(o.created_at).toLocaleDateString()}</small>
-                </div>
-                <div>
-                    <button class="btn btn-ghost" data-view="${o.id}">Ver Detalhes</button>
-                </div>
-            </div>
-        `).join('');
-        list.innerHTML = html;
-    }catch(e){
-        list.innerHTML = '<p style="color:red">Erro ao carregar pedidos</p>';
-    }
 }
 
 async function bindFinanceiro(container) {
@@ -1465,7 +1669,9 @@ function renderHeader(){
 function render(){
     const app = document.getElementById('app'); if(!app) return;
     renderHeader();
-    const route = (location.hash.replace(/^#/,'') || 'home').split('/')[0];
+    const routeParts = (location.hash.replace(/^#/,'') || 'home').split('/');
+    const route = routeParts[0];
+    const param = routeParts[1] || null;
 
     const isAdmin = currentUser && currentUser.role === 'admin';
     const isVisitor = currentUser && currentUser.role === 'visitante';
@@ -1496,10 +1702,19 @@ function render(){
     if(route === 'users'){ app.innerHTML = renderUsers(); setTimeout(()=>bindUsers(app),0); return; }
     if(route === 'setores' || route === 'sectors'){ app.innerHTML = renderSetores(); setTimeout(()=>bindSetores(app),0); return; }
     if(route === 'falecidos' || route === 'dead'){ app.innerHTML = renderFalecidos(); setTimeout(()=>bindFalecidos(app),0); return; }
-    if(route === 'orders'){ app.innerHTML = renderOrders(); setTimeout(()=>bindOrders(app),0); return; }
+    // Rota 'orders' agora usa a mesma view e bind de 'pedidos'
+    if(route === 'orders' || route === 'pedidos'){ app.innerHTML = renderPedidos(); setTimeout(()=>bindPedidos(app),0); return; }
     if(route === 'financeiro' || route=== 'finance'){ app.innerHTML = renderFinanceiro(); setTimeout(()=>bindFinanceiro(app),0); return; }
-    if(route === 'pedidos'){ app.innerHTML = renderPedidos(); setTimeout(()=>bindPedidos(app),0); return; }
     
+    // --- NOVAS ROTAS DE RECUPERAÇÃO DE SENHA ---
+    if(route === 'forgot-password'){ app.innerHTML = renderForgotPassword(); setTimeout(()=>bindForgotPassword(app),0); return; }
+    if(route === 'reset-password'){ 
+        if (!param) { location.hash = '#login'; render(); return; }
+        app.innerHTML = renderResetPassword(param); 
+        setTimeout(()=>bindResetPassword(app, param),0); 
+        return; 
+    }
+
     // --- NOVAS ROTAS DE PERFIL ---
     if(route === 'profile'){ if(!currentUser){ location.hash = '#login'; render(); return; } app.innerHTML = renderProfile(); setTimeout(()=>bindProfile(app),0); return; }
     if(route === 'edit-profile'){ if(!currentUser){ location.hash = '#login'; render(); return; } app.innerHTML = renderEditProfile(); setTimeout(()=>bindEditProfile(app),0); return; }
@@ -1577,7 +1792,16 @@ function bindNavigation() {
 
 
 // Initialize nav bindings
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // --- INICIALIZA O MÓDULO DE CRIPTOGRAFIA ---
+    try {
+        await cryptoModule.initialize();
+    } catch (e) {
+        alert("Erro crítico de segurança: Não foi possível inicializar o módulo de criptografia. A aplicação não pode continuar.");
+        document.body.innerHTML = '<div class="card" style="border-left: 5px solid red;"><h2>Erro Crítico</h2><p>Falha na inicialização do módulo de segurança. Verifique o console para mais detalhes.</p></div>';
+        return;
+    }
+
     // O bind da navegação agora é chamado dentro do renderHeader/renderNavigation
     
     // Bind para o menu hambúrguer

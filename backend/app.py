@@ -3,19 +3,118 @@ from psycopg2.extras import RealDictCursor
 import hashlib
 import os
 import uuid
+import logging
+from logging.handlers import RotatingFileHandler
+import json
+import base64
 
-from flask import Flask, jsonify, request, g, send_from_directory
+from flask import Flask, jsonify, request, g, send_from_directory, Response
 from flask_cors import CORS 
+from flask_mail import Mail, Message
+
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP, AES
 
 import jwt 
 import datetime
 
+# --- CONFIGURAÇÃO DE CRIPTOGRAFIA ---
+# Gera um par de chaves RSA para o servidor na inicialização
+server_key = RSA.generate(2048)
+server_private_key = server_key
+server_public_key = server_key.publickey().export_key()
+# Armazena as chaves públicas dos clientes em memória (em produção, usar Redis ou similar)
+client_public_keys = {}
+
+# --- CONFIGURAÇÃO DE LOGGING ---
+# Configura o logger para salvar em um arquivo
+log_formatter = logging.Formatter('%(asctime)s %(levelname)s %(funcName)s(%(lineno)d) %(message)s')
+log_file = 'app.log'
+# Rotação de arquivos: 1MB por arquivo, mantém até 5 arquivos de backup
+my_handler = RotatingFileHandler(log_file, maxBytes=1024*1024, backupCount=5)
+my_handler.setFormatter(log_formatter)
+my_handler.setLevel(logging.INFO)
+
 # Ajuste para servir arquivos estáticos da pasta raiz do projeto
 app = Flask(__name__, static_folder='..', static_url_path='/')
+app.logger.addHandler(my_handler)
+app.logger.setLevel(logging.INFO)
+
+# --- CONFIGURAÇÃO DO FLASK-MAIL ---
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'true').lower() in ['true', '1', 't']
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', app.config['MAIL_USERNAME'])
+mail = Mail(app)
+
 # Modificado para usar variável de ambiente para a URL do frontend e ser mais específico na rota
 frontend_url = os.getenv('FRONTEND_URL', 'http://127.0.0.1:5500')
 CORS(app, resources={r"/api/*": {"origins": [frontend_url, "http://localhost:5500", "https://cemiterio-0elv.onrender.com"]}})
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'muda_essa_chave_para_producao')
+
+
+# --- HELPERS DE CRIPTOGRAFIA ---
+def decrypt_request_payload(payload):
+    try:
+        # Decodifica os dados de Base64
+        encrypted_key = base64.b64decode(payload['encrypted_key'])
+        iv = base64.b64decode(payload['iv'])
+        ciphertext = base64.b64decode(payload['data'])
+
+        # Decriptografa a chave AES com a chave privada do servidor
+        cipher_rsa = PKCS1_OAEP.new(server_private_key)
+        session_key = cipher_rsa.decrypt(encrypted_key)
+
+        # Decriptografa os dados com a chave AES
+        cipher_aes = AES.new(session_key, AES.MODE_CBC, iv)
+        decrypted_data = cipher_aes.decrypt(ciphertext)
+        
+        # Remove o padding
+        unpadded_data = decrypted_data[:-decrypted_data[-1]]
+        return json.loads(unpadded_data.decode('utf-8'))
+    except Exception as e:
+        app.logger.error(f"Payload decryption failed: {e}")
+        return None
+
+def encrypt_response_payload(data, user_id):
+    try:
+        client_pub_key_str = client_public_keys.get(user_id)
+        if not client_pub_key_str:
+            raise ValueError("Client public key not found for user.")
+
+        client_public_key = RSA.import_key(client_pub_key_str)
+        
+        # Gera uma chave de sessão AES
+        session_key = os.urandom(16)
+        iv = os.urandom(16)
+
+        # Criptografa a chave de sessão com a chave pública do cliente
+        cipher_rsa = PKCS1_OAEP.new(client_public_key)
+        encrypted_key = cipher_rsa.encrypt(session_key)
+
+        # Criptografa os dados com AES
+        cipher_aes = AES.new(session_key, AES.MODE_CBC, iv)
+        data_bytes = json.dumps(data).encode('utf-8')
+        
+        # Adiciona padding
+        pad_len = 16 - (len(data_bytes) % 16)
+        padded_data = data_bytes + bytes([pad_len] * pad_len)
+        
+        ciphertext = cipher_aes.encrypt(padded_data)
+
+        # Codifica tudo em Base64 para transporte
+        return {
+            'encrypted_key': base64.b64encode(encrypted_key).decode('utf-8'),
+            'iv': base64.b64encode(iv).decode('utf-8'),
+            'data': base64.b64encode(ciphertext).decode('utf-8')
+        }
+    except Exception as e:
+        app.logger.error(f"Response encryption failed: {e}")
+        return None
+
+# --- FIM HELPERS DE CRIPTOGRAFIA ---
 
 
 def get_db_connection():
@@ -30,7 +129,7 @@ def get_db_connection():
         )
         return conn
     except psycopg2.Error as e:
-        print('DB connection error:', e)
+        app.logger.error('DB connection error: %s', e)
         return None
 
 
@@ -75,8 +174,34 @@ def hash_sensitive_data(data):
     hash_obj = hashlib.pbkdf2_hmac('sha256', data.encode(), salt, 100000)
     return salt.hex() + ':' + hash_obj.hex()
 
-# Middleware para autenticação e obtenção do usuário atual
+# Middleware para autenticação e decriptografia
 @app.before_request
+def before_request_handler():
+    # 1. Autenticação
+    authenticate_user()
+    
+    # 2. Decriptografia do Payload
+    # Ignora endpoints que não devem ser criptografados
+    exempt_paths = ['/api/login', '/api/security/public-key', '/api/forgot-password', '/api/token/refresh']
+    if request.path in exempt_paths or request.path.startswith('/api/reset-password'):
+        return
+
+    if request.method in ['POST', 'PUT'] and request.is_json:
+        encrypted_payload = request.get_json(silent=True)
+        if (encrypted_payload and 'encrypted_key' in encrypted_payload):
+            decrypted_payload = decrypt_request_payload(encrypted_payload)
+            if decrypted_payload is None:
+                # Se a decriptografia falhar, bloqueia a requisição
+                return jsonify({'error': 'Invalid encrypted payload'}), 400
+            # Substitui o json da requisição pelo payload decriptografado
+            request.json_decrypted = decrypted_payload
+        else:
+            # Se a criptografia é esperada mas não veio, pode ser um erro ou ataque
+            app.logger.warning(f"Unencrypted payload received for protected route {request.path}")
+
+
+# Middleware para autenticação e obtenção do usuário atual
+# @app.before_request # Esta função foi movida para 'before_request_handler'
 def authenticate_user():
     token = request.headers.get('Authorization', '').replace('Bearer ', '')
     if not token:
@@ -106,9 +231,9 @@ def authenticate_user():
             g.current_user = None
         cur.close()
         conn.close()
-        print(f"Authenticated user: {g.current_user}")  # Adicione este log
+        app.logger.info(f"Authenticated user: {g.current_user}")
     except Exception as e:
-        print(f"Authentication error: {e}")
+        app.logger.error(f"Authentication error: {e}")
         g.current_user = None
 
 # --- Rota para servir o frontend ---
@@ -134,6 +259,111 @@ def api_root():
         'available_routes': ['/api/login', '/api/usuarios', '/api/setores', '/api/falecidos', '/api/catalogo', '/api/carrinho', '/api/pedidos', '/api/financeiro']
     })
 # --- END NEW ROUTE ---
+
+# --- NEW: Security Endpoints ---
+@app.route('/api/security/public-key', methods=['GET'])
+def get_server_public_key():
+    """Fornece a chave pública RSA do servidor para os clientes."""
+    return jsonify({'public_key': server_public_key.decode('utf-8')})
+
+@app.route('/api/security/register-key', methods=['POST'])
+def register_client_key():
+    """Registra a chave pública de um cliente."""
+    if not g.current_user:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    data = request.get_json()
+    public_key = data.get('public_key')
+    if not public_key:
+        return jsonify({'error': 'Public key is required'}), 400
+        
+    user_id = g.current_user['id']
+    client_public_keys[user_id] = public_key
+    app.logger.info(f"Registered public key for user_id {user_id}")
+    
+    return jsonify({'message': 'Key registered successfully'}), 200
+
+# --- END NEW Security Endpoints ---
+
+
+# --- NEW: Password Recovery Routes ---
+@app.route('/api/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    email = data.get('email')
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+
+    conn = get_db_connection()
+    if not conn: return jsonify({'error': 'DB connection error'}), 500
+    cur = conn.cursor()
+    
+    cur.execute("SELECT id, name FROM usuarios WHERE email = %s", (email,))
+    user = cur.fetchone()
+
+    if user:
+        token = str(uuid.uuid4())
+        expires_at = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+        
+        cur.execute(
+            "INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (%s, %s, %s)",
+            (user['id'], token, expires_at)
+        )
+        conn.commit()
+
+        reset_link = f"{frontend_url}/#reset-password/{token}"
+        
+        try:
+            msg = Message(
+                "Recuperação de Senha - Cemitério Online",
+                recipients=[email]
+            )
+            msg.body = f"Olá {user['name']},\n\nPara redefinir sua senha, clique no link a seguir: {reset_link}\n\nSe você não solicitou esta alteração, ignore este e-mail.\n"
+            mail.send(msg)
+            app.logger.info(f"Password reset email sent to {email}")
+        except Exception as e:
+            app.logger.error(f"Failed to send password reset email: {e}")
+            return jsonify({'error': 'Failed to send email'}), 500
+
+    cur.close()
+    conn.close()
+    # Resposta genérica para não revelar se um e-mail existe ou não no sistema
+    return jsonify({'message': 'Se o e-mail estiver cadastrado, um link de recuperação será enviado.'}), 200
+
+@app.route('/api/reset-password/<token>', methods=['POST'])
+def reset_password(token):
+    data = request.get_json()
+    new_password = data.get('password')
+    if not new_password:
+        return jsonify({'error': 'New password is required'}), 400
+
+    conn = get_db_connection()
+    if not conn: return jsonify({'error': 'DB connection error'}), 500
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT user_id, expires_at FROM password_reset_tokens WHERE token = %s", (token,)
+    )
+    reset_req = cur.fetchone()
+
+    if not reset_req or reset_req['expires_at'].replace(tzinfo=None) < datetime.datetime.utcnow():
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Token inválido ou expirado'}), 400
+
+    hashed_password = generate_password_hash(new_password)
+    cur.execute("UPDATE usuarios SET password = %s WHERE id = %s", (hashed_password, reset_req['user_id']))
+    
+    # Invalida o token de reset
+    cur.execute("DELETE FROM password_reset_tokens WHERE token = %s", (token,))
+    conn.commit()
+
+    cur.close()
+    conn.close()
+    
+    app.logger.info(f"Password reset successfully for user_id {reset_req['user_id']}")
+    return jsonify({'message': 'Senha redefinida com sucesso.'}), 200
+
 
 # --- NEW: Refresh Token Route ---
 @app.route('/api/token/refresh', methods=['POST'])
@@ -217,10 +447,11 @@ def login():
         stored_password = user['password']
 
         # Debugging log
-        print(f"Login attempt: username={username}, stored_password={stored_password}")
+        app.logger.info(f"Login attempt: username={username}")
 
         # Verify password hash
         if not verify_password(password, stored_password):
+            app.logger.warning(f"Invalid password for user {username}")
             return jsonify({'error': 'invalid credentials'}), 401
 
         # Criar Access Token (curta duração)
@@ -261,7 +492,7 @@ def login():
             'user': user_data_to_return
         })
     except Exception as e:
-        print(f"Error during login: {e}")
+        app.logger.error(f"Error during login: {e}")
         return jsonify({'error': 'internal server error'}), 500
     finally:
         cur.close()
@@ -280,7 +511,7 @@ def usuarios_collection():
         cur.close(); conn.close();
         return jsonify(data)
     else:
-        payload = request.json or {}
+        payload = getattr(request, 'json_decrypted', request.json or {})
         hashed_password = generate_password_hash(payload.get('password'))  # Hash the password
         cur.execute('INSERT INTO usuarios (name, username, email, password, role) VALUES (%s,%s,%s,%s,%s) RETURNING id',
                     (payload.get('name'), payload.get('username'), payload.get('email'), hashed_password, payload.get('role','visitante')))
@@ -310,9 +541,16 @@ def usuarios_single(uid):
         cur.execute('SELECT id, name, username, email, role FROM usuarios WHERE id=%s', (uid,))
         user = cur.fetchone()
         if not user: cur.close(); conn.close(); return jsonify({}), 404
+        
+        # Criptografa a resposta se o usuário estiver logado
+        if g.current_user:
+            encrypted_response = encrypt_response_payload(user, g.current_user['id'])
+            if encrypted_response:
+                return jsonify(encrypted_response)
+        
         cur.close(); conn.close(); return jsonify(user)
     if request.method == 'PUT':
-        p = request.json or {}
+        p = getattr(request, 'json_decrypted', request.json or {})
         
         # Impede que usuários não-admin alterem seu próprio 'role'
         role = p.get('role')
@@ -355,7 +593,7 @@ def setores_collection():
         cur.close(); conn.close();
         return jsonify(data)
     else:
-        p = request.json or {}
+        p = getattr(request, 'json_decrypted', request.json or {})
         cur.execute('INSERT INTO setores (name, vagas) VALUES (%s,%s) RETURNING id', (p.get('name'), p.get('vagas')))
         nid = cur.fetchone()['id']
         conn.commit();
@@ -373,7 +611,7 @@ def setores_single(sid):
         if not row: cur.close(); conn.close(); return jsonify({}),404
         cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
-        p = request.json or {}
+        p = getattr(request, 'json_decrypted', request.json or {})
         cur.execute('UPDATE setores SET name=%s, vagas=%s WHERE id=%s', (p.get('name'), p.get('vagas'), sid))
         conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
     if request.method == 'DELETE':
@@ -403,7 +641,7 @@ def listar_vagas():
 
         return jsonify(setores)
     except Exception as e:
-        print(f"Error listing vagas: {e}")
+        app.logger.error(f"Error listing vagas: {e}")
         return jsonify({'error': 'internal server error'}), 500
     finally:
         cur.close()
@@ -435,7 +673,7 @@ def ocupar_vaga(setor_id):
             return jsonify({'error': 'Não há vagas disponíveis neste setor'}), 400
 
         # Inserir um novo registro de falecido para ocupar a vaga
-        payload = request.json or {}
+        payload = getattr(request, 'json_decrypted', request.json or {})
         cur.execute("""
             INSERT INTO falecidos (name, anoNascimento, anoMorte, setor)
             VALUES (%s, %s, %s, %s) RETURNING id
@@ -444,7 +682,7 @@ def ocupar_vaga(setor_id):
         conn.commit()
         return jsonify({'message': 'Vaga ocupada com sucesso', 'id': new_id}), 201
     except Exception as e:
-        print(f"Error occupying vaga: {e}")
+        app.logger.error(f"Error occupying vaga: {e}")
         return jsonify({'error': 'internal server error'}), 500
     finally:
         cur.close()
@@ -462,7 +700,7 @@ def falecidos_collection():
 
     if request.method == 'POST':
         try:
-            payload = request.json or {}
+            payload = getattr(request, 'json_decrypted', request.json or {})
             cur.execute("""
                 INSERT INTO falecidos (name, anonascimento, anomorte, setor, vaga)
                 VALUES (%s, %s, %s, %s, %s) RETURNING id
@@ -477,7 +715,7 @@ def falecidos_collection():
             conn.commit()
             return jsonify({'id': new_id}), 201
         except Exception as e:
-            print(f"Error creating falecido: {e}")
+            app.logger.error(f"Error creating falecido: {e}")
             return jsonify({'error': 'internal server error'}), 500
         finally:
             cur.close()
@@ -515,9 +753,16 @@ def falecidos_collection():
             """)
 
         data = cur.fetchall()
+        
+        # Criptografa a resposta se o usuário estiver logado
+        if g.current_user:
+            encrypted_response = encrypt_response_payload(data, g.current_user['id'])
+            if encrypted_response:
+                return jsonify(encrypted_response)
+                
         return jsonify(data)
     except Exception as e:
-        print(f"Error fetching falecidos: {e}")
+        app.logger.error(f"Error fetching falecidos: {e}")
         return jsonify({'error': 'internal server error'}), 500
     finally:
         cur.close()
@@ -534,7 +779,7 @@ def falecidos_single(fid):
         if not row: cur.close(); conn.close(); return jsonify({}),404
         cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
-        p = request.json or {}
+        p = getattr(request, 'json_decrypted', request.json or {})
         cur.execute('UPDATE falecidos SET name=%s, anonascimento=%s, anomorte=%s, setor=%s WHERE id=%s',
                     (p.get('name'), p.get('anoNascimento'), p.get('anoMorte'), p.get('setor'), fid))
         conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
@@ -548,7 +793,7 @@ def atribuir_vaga(fid):
     if not conn: return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     try:
-        payload = request.json or {}
+        payload = getattr(request, 'json_decrypted', request.json or {})
         vaga = payload.get('vaga')
         setor = payload.get('setor')
 
@@ -569,7 +814,7 @@ def atribuir_vaga(fid):
         conn.commit()
         return jsonify({'message': 'Vaga atribuída com sucesso'}), 200
     except Exception as e:
-        print(f"Error assigning vaga: {e}")
+        app.logger.error(f"Error assigning vaga: {e}")
         return jsonify({'error': 'internal server error'}), 500
     finally:
         cur.close()
@@ -584,7 +829,7 @@ def associar_falecido(fid):
         return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     try:
-        payload = request.json or {}
+        payload = getattr(request, 'json_decrypted', request.json or {})
         user_id = payload.get('user_id')
 
         if not user_id:
@@ -605,7 +850,7 @@ def associar_falecido(fid):
         conn.commit()
         return jsonify({'message': 'Falecido associado ao usuário com sucesso'}), 201
     except Exception as e:
-        print(f"Error associating falecido: {e}")
+        app.logger.error(f"Error associating falecido: {e}")
         return jsonify({'error': 'internal server error'}), 500
     finally:
         cur.close()
@@ -629,7 +874,7 @@ def listar_falecidos_usuario(user_id):
         falecidos = cur.fetchall()
         return jsonify(falecidos)
     except Exception as e:
-        print(f"Error listing falecidos for user: {e}")
+        app.logger.error(f"Error listing falecidos for user: {e}")
         return jsonify({'error': 'internal server error'}), 500
     finally:
         cur.close()
@@ -644,7 +889,7 @@ def associar_plano(fid):
         return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     try:
-        payload = request.json or {}
+        payload = getattr(request, 'json_decrypted', request.json or {})
         plano_id = payload.get('plano_id')
 
         if not plano_id:
@@ -665,7 +910,7 @@ def associar_plano(fid):
         conn.commit()
         return jsonify({'message': 'Plano associado ao falecido com sucesso'}), 201
     except Exception as e:
-        print(f"Error associating plano: {e}")
+        app.logger.error(f"Error associating plano: {e}")
         return jsonify({'error': 'internal server error'}), 500
     finally:
         cur.close()
@@ -688,7 +933,7 @@ def listar_planos_falecido(fid):
         planos = cur.fetchall()
         return jsonify(planos)
     except Exception as e:
-        print(f"Error listing planos for falecido: {e}")
+        app.logger.error(f"Error listing planos for falecido: {e}")
         return jsonify({'error': 'internal server error'}), 500
     finally:
         cur.close()
@@ -705,7 +950,7 @@ def catalogo_collection():
         cur.execute('SELECT id, nome, descricao, preco FROM catalogo')
         data = cur.fetchall(); cur.close(); conn.close(); return jsonify(data)
     else:
-        p = request.json or {}
+        p = getattr(request, 'json_decrypted', request.json or {})
         cur.execute('INSERT INTO catalogo (nome, descricao, preco) VALUES (%s,%s,%s) RETURNING id', (p.get('nome'), p.get('descricao'), p.get('preco')))
         nid = cur.fetchone()['id']
         conn.commit(); cur.close(); conn.close(); return jsonify({'id':nid}),201
@@ -725,7 +970,7 @@ def carrinho_collection():
             cur.execute('SELECT id, user_id, produto_id, quantidade FROM carrinho')
         data = cur.fetchall(); cur.close(); conn.close(); return jsonify(data)
     if request.method == 'POST':
-        p = request.json or {}
+        p = getattr(request, 'json_decrypted', request.json or {})
         # espera: produto_id, quantidade, user_id (pode ser null)
         cur.execute('INSERT INTO carrinho (user_id, produto_id, quantidade) VALUES (%s,%s,%s) RETURNING id', (p.get('user_id'), p.get('produto_id'), p.get('quantidade')))
         nid = cur.fetchone()['id']
@@ -751,7 +996,7 @@ def carrinho_item(item_id):
         if not row: cur.close(); conn.close(); return jsonify({}),404
         cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
-        p = request.json or {}
+        p = getattr(request, 'json_decrypted', request.json or {})
         cur.execute('UPDATE carrinho SET quantidade=%s WHERE id=%s', (p.get('quantidade'), item_id))
         conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
     if request.method == 'DELETE':
@@ -767,7 +1012,7 @@ def pedidos_collection():
     cur = conn.cursor()
     
     if request.method == 'POST':
-        p = request.json or {}
+        p = getattr(request, 'json_decrypted', request.json or {})
         try:
             # Hash and salt the CPF
             hashed_cpf = hash_sensitive_data(p.get('cpf'))
@@ -788,7 +1033,7 @@ def pedidos_collection():
             conn.commit()
             return jsonify({'id': pid}), 201
         except Exception as e:
-            print(f"Error creating order: {e}")
+            app.logger.error(f"Error creating order: {e}")
             return jsonify({'error': 'internal server error'}), 500
         finally:
             cur.close()
@@ -819,9 +1064,16 @@ def pedidos_collection():
                 return jsonify([]), 200
 
             pedidos = cur.fetchall()
+            
+            # Criptografa a resposta se o usuário estiver logado
+            if g.current_user:
+                encrypted_response = encrypt_response_payload(pedidos, g.current_user['id'])
+                if encrypted_response:
+                    return jsonify(encrypted_response)
+
             return jsonify(pedidos)
         except Exception as e:
-            print(f"Error fetching pedidos: {e}")
+            app.logger.error(f"Error fetching pedidos: {e}")
             return jsonify({'error': 'internal server error'}), 500
         finally:
             cur.close()
@@ -838,7 +1090,7 @@ def aprovar_pedido(pedido_id):
         return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     try:
-        payload = request.json or {}
+        payload = getattr(request, 'json_decrypted', request.json or {})
         novo_status = payload.get('status')  # Espera 'Aprovado' ou 'Rejeitado'
         if novo_status not in ['Aprovado', 'Rejeitado']:
             return jsonify({'error': 'Status inválido. Use "Aprovado" ou "Rejeitado".'}), 400
@@ -847,14 +1099,14 @@ def aprovar_pedido(pedido_id):
         conn.commit()
         return jsonify({'message': 'Status do pedido atualizado com sucesso'}), 200
     except Exception as e:
-        print(f"Error updating approval status: {e}")
+        app.logger.error(f"Error updating approval status: {e}")
         return jsonify({'error': 'internal server error'}), 500
     finally:
         cur.close()
         conn.close()
 
 
-# ---   ceiro ---
+# --- Financeiro ---
 @app.route('/api/financeiro', methods=['GET','POST'])
 def financeiro_collection():
     conn = get_db_connection()
@@ -864,18 +1116,18 @@ def financeiro_collection():
     
     if request.method == 'GET':
         try:
-            cur.execute('SELECT id, tipo, descricao, valor, data FROM financeiro')
+            cur.execute('SELECT id, tipo, descricao, valor, data, status FROM financeiro')
             data = cur.fetchall()
             return jsonify(data)
         except Exception as e:
-            print(f"Erro ao buscar registros financeiros: {e}")
+            app.logger.error(f"Erro ao buscar registros financeiros: {e}")
             return jsonify({'error': 'Erro interno ao buscar dados.'}), 500
         finally:
             cur.close()
             conn.close()
     
     if request.method == 'POST':
-        p = request.json or {}
+        p = getattr(request, 'json_decrypted', request.json or {})
         # --- Validação dos dados de entrada ---
         tipo_str = p.get('tipo')
         valor_str = p.get('valor')
@@ -908,7 +1160,7 @@ def financeiro_collection():
             return jsonify({'id': nid}), 201
         except Exception as e:
             conn.rollback()  # Desfaz a transação em caso de erro
-            print(f"Erro ao criar registro financeiro: {e}")  # Log do erro no console do backend
+            app.logger.error(f"Erro ao criar registro financeiro: {e}")  # Log do erro no console do backend
             return jsonify({'error': 'Erro interno ao salvar no banco de dados. Verifique o formato dos dados e os nomes das colunas.'}), 500
         finally:
             cur.close()
@@ -921,17 +1173,18 @@ def financeiro_single(fid):
     cur = conn.cursor()
     try:
         if request.method == 'GET':
-            cur.execute('SELECT id, tipo, descricao, valor, data FROM financeiro WHERE id=%s', (fid,))
+            cur.execute('SELECT id, tipo, descricao, valor, data, status FROM financeiro WHERE id=%s', (fid,))
             row = cur.fetchone();
             if not row: return jsonify({}),404
             return jsonify(row)
         
         if request.method == 'PUT':
-            p = request.json or {}
+            p = getattr(request, 'json_decrypted', request.json or {})
             # --- Validação dos dados de entrada ---
             tipo_str = p.get('tipo')
             valor_str = p.get('valor')
             data_str = p.get('data')
+            status_str = p.get('status') # Adicionado para ler o status
 
             if not tipo_str or valor_str is None or not data_str:
                 return jsonify({'error': 'Os campos "tipo", "valor" e "data" são obrigatórios.'}), 400
@@ -950,8 +1203,8 @@ def financeiro_single(fid):
                 return jsonify({'error': 'O campo "valor" deve ser um número e "data" deve estar no formato AAAA-MM-DD.'}), 400
             # --- Fim da validação ---
 
-            cur.execute('UPDATE financeiro SET tipo=%s, descricao=%s, valor=%s, data=%s WHERE id=%s', 
-                        (tipo_db, p.get('descricao'), valor, data, fid))
+            cur.execute('UPDATE financeiro SET tipo=%s, descricao=%s, valor=%s, data=%s, status=%s WHERE id=%s', 
+                        (tipo_db, p.get('descricao'), valor, data, status_str, fid))
             conn.commit()
             return jsonify({'ok':True})
 
@@ -962,7 +1215,7 @@ def financeiro_single(fid):
             
     except Exception as e:
         conn.rollback()
-        print(f"Erro na operação com financeiro ID {fid}: {e}")
+        app.logger.error(f"Erro na operação com financeiro ID {fid}: {e}")
         return jsonify({'error': 'Erro interno no servidor'}), 500
     finally:
         cur.close()
