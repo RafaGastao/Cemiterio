@@ -109,6 +109,30 @@ O frontend é composto por arquivos estáticos. Para evitar problemas de CORS du
 
 A aplicação estará pronta para uso, conectando-se ao backend que você iniciou no passo anterior.
 
+### Variáveis de Ambiente
+
+Para que a aplicação funcione corretamente, especialmente em produção (ex: Render), você deve configurar as seguintes variáveis de ambiente:
+
+#### Banco de Dados (PostgreSQL)
+- `DB_HOST`: Endereço do servidor do banco de dados.
+- `DB_USER`: Nome do usuário do banco.
+- `DB_PASSWORD`: Senha do usuário do banco.
+- `DB_DATABASE`: Nome do banco de dados.
+- `DB_PORT`: Porta de conexão (geralmente `5432`).
+
+#### Chave Secreta do Flask
+- `SECRET_KEY`: Uma chave longa e aleatória para a segurança das sessões e tokens.
+
+#### Configuração de E-mail (para recuperação de senha)
+- `MAIL_SERVER`: Servidor SMTP (ex: `smtp.gmail.com`).
+- `MAIL_PORT`: Porta do servidor SMTP (ex: `587` para TLS).
+- `MAIL_USE_TLS`: `true` ou `false`.
+- `MAIL_USERNAME`: Seu endereço de e-mail.
+- `MAIL_PASSWORD`: A senha do seu e-mail. **Atenção:** Se usar Gmail com verificação em duas etapas, você precisa gerar uma **"Senha de App"**.
+
+#### URL do Frontend
+- `FRONTEND_URL`: A URL base do seu frontend (ex: `http://127.0.0.1:5500` para local ou a URL do seu site no Render).
+
 ## Deploy (Render)
 
 - **Backend**: Faça o deploy da pasta `backend` como um "Web Service" no Render.

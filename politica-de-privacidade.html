@@ -12,29 +12,31 @@
 <body>
     <div class="card">
         <h1>Política de Privacidade</h1>
-        <p><strong>Última atualização:</strong> [Data Atual]</p>
+        <p><strong>Última atualização:</strong> 12 de novembro de 2025</p>
 
         <h2>1. Coleta de Dados</h2>
         <p>Coletamos informações que você nos fornece diretamente ao criar uma conta ou realizar um pedido. Isso inclui:</p>
         <ul>
-            <li><strong>Informações da Conta:</strong> Nome, nome de usuário, e-mail e senha.</li>
-            <li><strong>Informações de Pedido:</strong> Nome, CPF, e-mail e telefone para processamento de pedidos.</li>
+            <li><strong>Informações de Identificação:</strong> Nome, nome de usuário, e-mail e senha (armazenada com hash).</li>
+            <li><strong>Informações de Contato e Faturamento:</strong> CPF (armazenado com hash), telefone e detalhes de pagamento.</li>
+            <li><strong>Dados de Uso:</strong> Informações sobre como você interage com nosso sistema, como páginas visitadas e ações realizadas.</li>
         </ul>
 
         <h2>2. Uso dos Dados</h2>
         <p>Utilizamos os dados coletados para:</p>
         <ul>
-            <li>Fornecer, operar e manter nosso sistema.</li>
-            <li>Autenticar usuários e garantir a segurança da conta.</li>
-            <li>Processar transações e enviar informações sobre pedidos.</li>
-            <li>Permitir que você gerencie seus dados e associações (como falecidos associados).</li>
+            <li>Processar seus pedidos e fornecer os serviços solicitados.</li>
+            <li>Gerenciar sua conta e fornecer suporte ao cliente.</li>
+            <li>Garantir a segurança do sistema e prevenir fraudes.</li>
+            <li>Enviar comunicações importantes, como confirmações de pedidos e notificações de recuperação de senha.</li>
         </ul>
 
         <h2>3. Proteção dos Dados</h2>
         <p>Levamos a segurança dos seus dados a sério. Implementamos medidas para proteger suas informações, incluindo:</p>
         <ul>
-            <li><strong>Criptografia de Senha:</strong> Suas senhas são armazenadas usando algoritmos de hash e salt (PBKDF2-SHA256), o que significa que nunca armazenamos sua senha em texto plano.</li>
-            <li><strong>Proteção de Dados Sensíveis:</strong> Dados como CPF são igualmente protegidos com hash e salt antes de serem armazenados.</li>
+            <li><strong>Criptografia em Trânsito:</strong> Toda a comunicação entre seu navegador e nossos servidores é criptografada usando AES, com a chave protegida por RSA.</li>
+            <li><strong>Hashing de Dados Sensíveis:</strong> Senhas e CPFs são armazenados usando algoritmos de hash seguros com salt, tornando-os ilegíveis mesmo em caso de acesso indevido ao banco de dados.</li>
+            <li><strong>Controle de Acesso:</strong> O acesso aos dados é restrito com base no nível de permissão do usuário (administrador vs. visitante).</li>
         </ul>
 
         <h2>4. Seus Direitos</h2>

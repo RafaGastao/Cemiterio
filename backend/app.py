@@ -47,6 +47,7 @@ app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'true').lower() in ['true
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', app.config['MAIL_USERNAME'])
+app.config['MAIL_TIMEOUT'] = 10  # Adiciona um timeout de 10 segundos
 mail = Mail(app)
 
 # Modificado para usar variável de ambiente para a URL do frontend e ser mais específico na rota
@@ -585,7 +586,7 @@ def usuarios_single(uid):
 @app.route('/api/setores', methods=['GET','POST'])
 def setores_collection():
     conn = get_db_connection();
-    if not conn: return jsonify([]),500
+    if not conn: return jsonify([]), 500
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, name, vagas FROM setores')
@@ -598,17 +599,17 @@ def setores_collection():
         nid = cur.fetchone()['id']
         conn.commit();
         cur.close(); conn.close();
-        return jsonify({'id': nid}),201
+        return jsonify({'id': nid}), 201
 
 @app.route('/api/setores/<int:sid>', methods=['GET','PUT','DELETE'])
 def setores_single(sid):
     conn = get_db_connection();
-    if not conn: return jsonify({'error':'db'}),500
+    if not conn: return jsonify({'error':'db'}), 500
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, name, vagas FROM setores WHERE id=%s', (sid,))
         row = cur.fetchone();
-        if not row: cur.close(); conn.close(); return jsonify({}),404
+        if not row: cur.close(); conn.close(); return jsonify({}), 404
         cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
         p = getattr(request, 'json_decrypted', request.json or {})
@@ -771,12 +772,12 @@ def falecidos_collection():
 @app.route('/api/falecidos/<int:fid>', methods=['GET','PUT','DELETE'])
 def falecidos_single(fid):
     conn = get_db_connection();
-    if not conn: return jsonify({'error':'db'}),500
+    if not conn: return jsonify({'error':'db'}), 500
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, name, anonascimento, anomorte, setor FROM falecidos WHERE id=%s', (fid,))
         row = cur.fetchone();
-        if not row: cur.close(); conn.close(); return jsonify({}),404
+        if not row: cur.close(); conn.close(); return jsonify({}), 404
         cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
         p = getattr(request, 'json_decrypted', request.json or {})
@@ -944,7 +945,7 @@ def listar_planos_falecido(fid):
 @app.route('/api/catalogo', methods=['GET','POST'])
 def catalogo_collection():
     conn = get_db_connection();
-    if not conn: return jsonify([]),500
+    if not conn: return jsonify([]), 500
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, nome, descricao, preco FROM catalogo')
@@ -960,7 +961,7 @@ def catalogo_collection():
 @app.route('/api/carrinho', methods=['GET','POST','DELETE'])
 def carrinho_collection():
     conn = get_db_connection();
-    if not conn: return jsonify({'error':'db'}),500
+    if not conn: return jsonify({'error':'db'}), 500
     cur = conn.cursor()
     if request.method == 'GET':
         user_id = request.args.get('user_id')
@@ -979,8 +980,7 @@ def carrinho_collection():
         # permitir deleção por user_id query param (limpar carrinho) ou corpo ?user_id=
         user_id = request.args.get('user_id')
         if user_id:
-            cur.execute('DELETE FROM carrinho WHERE user_id=%s', (user_id,))
-            conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
+            cur.execute('DELETE FROM carrinho WHERE user_id=%s', (user_id,)); conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
         else:
             cur.close(); conn.close(); return jsonify({'error':'user_id required to clear cart'}),400
 
@@ -988,12 +988,12 @@ def carrinho_collection():
 @app.route('/api/carrinho/<int:item_id>', methods=['GET','PUT','DELETE'])
 def carrinho_item(item_id):
     conn = get_db_connection();
-    if not conn: return jsonify({'error':'db'}),500
+    if not conn: return jsonify({'error':'db'}), 500
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, user_id, produto_id, quantidade FROM carrinho WHERE id=%s', (item_id,))
         row = cur.fetchone();
-        if not row: cur.close(); conn.close(); return jsonify({}),404
+        if not row: cur.close(); conn.close(); return jsonify({}), 404
         cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
         p = getattr(request, 'json_decrypted', request.json or {})
@@ -1092,8 +1092,8 @@ def aprovar_pedido(pedido_id):
     try:
         payload = getattr(request, 'json_decrypted', request.json or {})
         novo_status = payload.get('status')  # Espera 'Aprovado' ou 'Rejeitado'
-        if novo_status not in ['Aprovado', 'Rejeitado']:
-            return jsonify({'error': 'Status inválido. Use "Aprovado" ou "Rejeitado".'}), 400
+        if not novo_status:
+            return jsonify({'error': 'O campo "status" é obrigatório.'}), 400
 
         cur.execute('UPDATE pedidos SET status = %s WHERE id = %s', (novo_status, pedido_id))
         conn.commit()
@@ -1169,7 +1169,7 @@ def financeiro_collection():
 @app.route('/api/financeiro/<int:fid>', methods=['GET','PUT','DELETE'])
 def financeiro_single(fid):
     conn = get_db_connection();
-    if not conn: return jsonify({'error':'db'}),500
+    if not conn: return jsonify({'error':'db'}), 500
     cur = conn.cursor()
     try:
         if request.method == 'GET':

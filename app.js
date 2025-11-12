@@ -1113,7 +1113,8 @@ async function bindPedidos(container) {
                     <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small>
                 </div>
                 <div class="actions">
-                    ${currentUser?.role === 'admin' && p.status === 'Pendente' ? `
+                    ${currentUser?.role === 'admin' ? `
+                        <button class="btn btn-ghost" data-edit="${p.id}">Editar</button>
                         <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
                         <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
                     ` : ''}
@@ -1123,6 +1124,23 @@ async function bindPedidos(container) {
         list.innerHTML = html;
 
         if (currentUser?.role === 'admin') {
+            // Bind para o botão Editar (atualmente, permite mudar o status)
+            list.querySelectorAll('[data-edit]').forEach(btn => {
+                btn.onclick = async () => {
+                    const pedidoId = btn.dataset.edit;
+                    const novoStatus = prompt('Informe o novo status do pedido (ex: Aprovado, Pendente, Rejeitado):', 'Aprovado');
+                    if (novoStatus) {
+                        try {
+                            await updatePedidoStatus(pedidoId, novoStatus);
+                            alert('Status do pedido atualizado com sucesso!');
+                            render();
+                        } catch (e) {
+                            alert('Erro ao atualizar status: ' + e.message);
+                        }
+                    }
+                };
+            });
+
             list.querySelectorAll('[data-aprovar]').forEach(btn => {
                 btn.onclick = async () => {
                     const pedidoId = btn.dataset.aprovar;
