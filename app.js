@@ -81,33 +81,62 @@ const cryptoModule = (() => {
         // Criptografa um payload para enviar ao servidor
         encrypt: async (data) => {
             if (!serverPublicKey) throw new Error("Server public key not available.");
-            const sessionKey = await window.crypto.subtle.generateKey({ name: "AES-CBC", length: 256 }, true, ["encrypt", "decrypt"]);
-            const iv = window.crypto.getRandomValues(new Uint8Array(16)); // IV de 16 bytes para CBC
-
-            const encryptedKey = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, serverPublicKey, await window.crypto.subtle.exportKey("raw", sessionKey));
             
+            // 1. Gerar chave de sessão e IV com Web Crypto API (mais seguro para geração)
+            const sessionKey = await window.crypto.subtle.generateKey({ name: "AES-CBC", length: 256 }, true, ["encrypt", "decrypt"]);
+            const iv = window.crypto.getRandomValues(new Uint8Array(16));
+
+            // 2. Exportar a chave de sessão para usar com CryptoJS
+            const rawSessionKey = await window.crypto.subtle.exportKey("raw", sessionKey);
+            const sessionKeyHex = CryptoJS.lib.WordArray.create(rawSessionKey);
+            const ivHex = CryptoJS.lib.WordArray.create(iv);
+
+            // 3. Criptografar a chave de sessão com RSA (Web Crypto API)
+            const encryptedKey = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, serverPublicKey, rawSessionKey);
+            
+            // 4. Criptografar os dados com CryptoJS (AES-CBC)
             const dataStr = JSON.stringify(data);
-            const encodedData = new TextEncoder().encode(dataStr);
-            const encryptedData = await window.crypto.subtle.encrypt({ name: "AES-CBC", iv }, sessionKey, encodedData);
+            const encryptedData = CryptoJS.AES.encrypt(dataStr, sessionKeyHex, { 
+                iv: ivHex, 
+                mode: CryptoJS.mode.CBC, 
+                padding: CryptoJS.pad.Pkcs7 
+            });
 
             return {
                 encrypted_key: btoa(String.fromCharCode(...new Uint8Array(encryptedKey))),
                 iv: btoa(String.fromCharCode(...iv)),
-                data: btoa(String.fromCharCode(...new Uint8Array(encryptedData)))
+                data: encryptedData.toString() // CryptoJS já usa Base64 por padrão
             };
         },
         // Decriptografa um payload recebido do servidor
         decrypt: async (encryptedPayload) => {
             if (!clientKeyPair) throw new Error("Client keys not available.");
+
+            // 1. Decodificar dados recebidos
             const encryptedKey = Uint8Array.from(atob(encryptedPayload.encrypted_key), c => c.charCodeAt(0));
             const iv = Uint8Array.from(atob(encryptedPayload.iv), c => c.charCodeAt(0));
-            const data = Uint8Array.from(atob(encryptedPayload.data), c => c.charCodeAt(0));
+            const data = encryptedPayload.data; // Já está em Base64
 
+            // 2. Decriptografar a chave de sessão com RSA (Web Crypto API)
             const sessionKeyData = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, clientKeyPair.privateKey, encryptedKey);
-            const sessionKey = await window.crypto.subtle.importKey("raw", sessionKeyData, "AES-CBC", true, ["decrypt"]);
-            const decryptedData = await window.crypto.subtle.decrypt({ name: "AES-CBC", iv }, sessionKey, data);
             
-            return JSON.parse(new TextDecoder().decode(decryptedData));
+            // 3. Preparar chave e IV para CryptoJS
+            const sessionKeyHex = CryptoJS.lib.WordArray.create(sessionKeyData);
+            const ivHex = CryptoJS.lib.WordArray.create(iv);
+
+            // 4. Decriptografar os dados com CryptoJS (AES-CBC)
+            const decrypted = CryptoJS.AES.decrypt(data, sessionKeyHex, { 
+                iv: ivHex, 
+                mode: CryptoJS.mode.CBC, 
+                padding: CryptoJS.pad.Pkcs7 
+            });
+            
+            const decryptedStr = decrypted.toString(CryptoJS.enc.Utf8);
+            if (!decryptedStr) {
+                throw new Error("Decryption resulted in empty string. Check for padding or key errors.");
+            }
+            
+            return JSON.parse(decryptedStr);
         }
     };
 })();
