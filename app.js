@@ -230,6 +230,7 @@ async function api(path, opts = {}){
     let j = await res.json().catch(()=>null);
 
     // --- LÓGICA DE DECRIPTOGRAFIA ---
+    // Descriptografa se a resposta contiver uma chave criptografada, independentemente do método.
     if (j && j.encrypted_key) {
         try {
             j = await cryptoModule.decrypt(j);

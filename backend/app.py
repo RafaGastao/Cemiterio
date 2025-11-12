@@ -750,12 +750,7 @@ def falecidos_collection():
 
         data = cur.fetchall()
         
-        # Criptografa a resposta se o usuário estiver logado
-        if g.current_user:
-            encrypted_response = encrypt_response_payload(data, g.current_user['id'])
-            if encrypted_response:
-                return jsonify(encrypted_response)
-                
+        # Resposta para GET não será mais criptografada para simplificar
         return jsonify(data)
     except Exception as e:
         app.logger.error(f"Error fetching falecidos: {e}")
@@ -1060,12 +1055,7 @@ def pedidos_collection():
 
             pedidos = cur.fetchall()
             
-            # Criptografa a resposta se o usuário estiver logado
-            if g.current_user:
-                encrypted_response = encrypt_response_payload(pedidos, g.current_user['id'])
-                if encrypted_response:
-                    return jsonify(encrypted_response)
-
+            # Resposta para GET não será mais criptografada
             return jsonify(pedidos)
         except Exception as e:
             app.logger.error(f"Error fetching pedidos: {e}")
