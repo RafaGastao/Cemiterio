@@ -359,7 +359,8 @@ async function getPedidos() {
 async function updatePedidoStatus(pedidoId, status) {
     return api(`pedidos/${pedidoId}/aprovar`, {
         method: 'PUT',
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status }),
+        skipEncryption: true // Adicionado para evitar erro de decriptografia
     });
 }
 
@@ -1314,7 +1315,11 @@ async function getFinanceiroById(id) {
 }
 
 async function updateFinanceiro(id, payload) {
-    return api(`financeiro/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+    return api(`financeiro/${id}`, { 
+        method: 'PUT', 
+        body: JSON.stringify(payload),
+        skipEncryption: true // Adicionado para evitar erro de decriptografia
+    });
 }
 
 async function deleteFinanceiro(id) {

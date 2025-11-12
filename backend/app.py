@@ -1028,18 +1028,18 @@ def pedidos_collection():
         finally:
             cur.close()
             conn.close()
-
+    
     if request.method == 'GET':
         """Lista pedidos realizados. Admins veem todos os pedidos, usuários veem apenas os próprios."""
         try:
-            if g.current_user and g.current_user['role'] == 'admin':
+            if (g.current_user and g.current_user['role'] == 'admin'):
                 # Admins podem ver todos os pedidos
                 cur.execute("""
                     SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at
                     FROM pedidos p
                     LEFT JOIN usuarios u ON p.user_id = u.id
                 """)
-            elif g.current_user:
+            elif (g.current_user):
                 # Usuários comuns veem apenas os próprios pedidos
                 cur.execute("""
                     SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at
@@ -1075,7 +1075,11 @@ def aprovar_pedido(pedido_id):
         return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     try:
-        payload = getattr(request, 'json_decrypted', request.json or {})
+        # Lê o JSON diretamente, pois a requisição não será mais criptografada
+        payload = request.get_json()
+        if not payload:
+            return jsonify({'error': 'Payload da requisição inválido ou ausente.'}), 400
+            
         novo_status = payload.get('status')  # Espera 'Aprovado' ou 'Rejeitado'
         if not novo_status:
             return jsonify({'error': 'O campo "status" é obrigatório.'}), 400
@@ -1164,7 +1168,11 @@ def financeiro_single(fid):
             return jsonify(row)
         
         if request.method == 'PUT':
-            p = getattr(request, 'json_decrypted', request.json or {})
+            # Lê o JSON diretamente, pois a requisição não será mais criptografada
+            p = request.get_json()
+            if not p:
+                return jsonify({'error': 'Payload da requisição inválido ou ausente.'}), 400
+
             # --- Validação dos dados de entrada ---
             tipo_str = p.get('tipo')
             valor_str = p.get('valor')
