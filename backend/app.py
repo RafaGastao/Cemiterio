@@ -2,6 +2,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import hashlib
 import os
+import uuid
 
 from flask import Flask, jsonify, request, g, send_from_directory
 from flask_cors import CORS 
@@ -56,6 +57,18 @@ def verify_password(password, stored_hash):
         # Isso previne o crash da aplicação por senhas em formato antigo/inválido.
         return False
 
+# Helper: Verifica se um token está na blacklist
+def is_token_revoked(jti):
+    conn = get_db_connection()
+    if not conn:
+        return True # Em caso de erro de DB, assume que o token é inválido
+    cur = conn.cursor()
+    cur.execute("SELECT EXISTS (SELECT 1 FROM token_blacklist WHERE jti = %s)", (jti,))
+    revoked = cur.fetchone()['exists']
+    cur.close()
+    conn.close()
+    return revoked
+
 # Helper: Hash and salt sensitive data (e.g., CPF)
 def hash_sensitive_data(data):
     salt = os.urandom(16)  # Generate a 16-byte salt
@@ -71,6 +84,13 @@ def authenticate_user():
         return
     try:
         decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        
+        # Verifica se o token está na blacklist
+        jti = decoded.get('jti')
+        if not jti or is_token_revoked(jti):
+            g.current_user = None
+            return
+
         user_id = decoded.get('user_id')
         conn = get_db_connection()
         if not conn:  # <-- ADICIONAR ESTA VERIFICAÇÃO
@@ -115,6 +135,64 @@ def api_root():
     })
 # --- END NEW ROUTE ---
 
+# --- NEW: Refresh Token Route ---
+@app.route('/api/token/refresh', methods=['POST'])
+def refresh_token():
+    data = request.get_json()
+    refresh_token = data.get('refresh_token')
+    if not refresh_token:
+        return jsonify({'error': 'Refresh token is required'}), 400
+
+    try:
+        decoded = jwt.decode(refresh_token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        
+        # Verifica se é um refresh token e se não está na blacklist
+        if decoded.get('type') != 'refresh' or is_token_revoked(decoded.get('jti')):
+            return jsonify({'error': 'Invalid refresh token'}), 401
+
+        user_id = decoded.get('user_id')
+        access_token = jwt.encode(
+            {
+                'user_id': user_id,
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=15),
+                'jti': str(uuid.uuid4()),
+                'type': 'access'
+            },
+            app.config['SECRET_KEY'],
+            algorithm='HS256'
+        )
+        return jsonify({'access_token': access_token})
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Refresh token has expired'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'error': 'Invalid refresh token'}), 401
+
+# --- NEW: Logout Route ---
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    if not token:
+        return jsonify({'message': 'No token provided'}), 200
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'DB connection error'}), 500
+    
+    try:
+        decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'], options={"verify_exp": False})
+        jti = decoded.get('jti')
+        if jti:
+            cur = conn.cursor()
+            cur.execute("INSERT INTO token_blacklist (jti) VALUES (%s) ON CONFLICT (jti) DO NOTHING", (jti,))
+            conn.commit()
+            cur.close()
+        return jsonify({'message': 'Successfully logged out'}), 200
+    except jwt.InvalidTokenError:
+        return jsonify({'message': 'Invalid token'}), 200 # Não retorna erro, apenas confirma que não há sessão válida
+    finally:
+        if conn:
+            conn.close()
+
 # --- Auth: login (simples) ---
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -145,11 +223,30 @@ def login():
         if not verify_password(password, stored_password):
             return jsonify({'error': 'invalid credentials'}), 401
 
-        token = jwt.encode(
-            {'user_id': user['id'], 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=8)},
+        # Criar Access Token (curta duração)
+        access_token = jwt.encode(
+            {
+                'user_id': user['id'], 
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=15), # Duração de 15 minutos
+                'jti': str(uuid.uuid4()),
+                'type': 'access'
+            },
             app.config['SECRET_KEY'],
             algorithm='HS256'
         )
+        
+        # Criar Refresh Token (longa duração)
+        refresh_token = jwt.encode(
+            {
+                'user_id': user['id'], 
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7), # Duração de 7 dias
+                'jti': str(uuid.uuid4()),
+                'type': 'refresh'
+            },
+            app.config['SECRET_KEY'],
+            algorithm='HS256'
+        )
+
         # Retorna o usuário completo, exceto a senha
         user_data_to_return = {
             'id': user['id'], 
@@ -158,7 +255,11 @@ def login():
             'email': user['email'],
             'role': user['role']
         }
-        return jsonify({'token': token, 'user': user_data_to_return})
+        return jsonify({
+            'access_token': access_token, 
+            'refresh_token': refresh_token,
+            'user': user_data_to_return
+        })
     except Exception as e:
         print(f"Error during login: {e}")
         return jsonify({'error': 'internal server error'}), 500
@@ -220,6 +321,13 @@ def usuarios_single(uid):
             user_role = cur.fetchone()
             if user_role:
                 role = user_role['role'] # Mantém o role existente
+        
+        # Se o role ainda for nulo (não veio no payload e não é admin), busca o role atual para não anular.
+        if role is None:
+            cur.execute('SELECT role FROM usuarios WHERE id=%s', (uid,))
+            user_role = cur.fetchone()
+            if user_role:
+                role = user_role['role']
 
         # Atualiza a senha apenas se uma nova for fornecida
         if p.get('password'):
@@ -232,8 +340,7 @@ def usuarios_single(uid):
 
         conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
     if request.method == 'DELETE':
-        cur.execute('DELETE FROM usuarios WHERE id=%s', (uid,))
-        conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
+        cur.execute('DELETE FROM usuarios WHERE id=%s', (uid,)); conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
 
 
 # --- Setores CRUD ---
@@ -665,10 +772,10 @@ def pedidos_collection():
             # Hash and salt the CPF
             hashed_cpf = hash_sensitive_data(p.get('cpf'))
 
-            # Insert the order
+            # Insert the order with default status 'Pendente'
             cur.execute(
-                'INSERT INTO pedidos (user_id, nome, cpf, email, telefone, forma_pagamento, total, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
-                (p.get('user_id'), p.get('nome'), hashed_cpf, p.get('email'), p.get('telefone'), p.get('forma_pagamento'), p.get('total'), datetime.datetime.utcnow())
+                'INSERT INTO pedidos (user_id, nome, cpf, email, telefone, forma_pagamento, total, created_at, status) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id',
+                (p.get('user_id'), p.get('nome'), hashed_cpf, p.get('email'), p.get('telefone'), p.get('forma_pagamento'), p.get('total'), datetime.datetime.utcnow(), 'Pendente')
             )
             pid = cur.fetchone()['id']
 
@@ -720,7 +827,6 @@ def pedidos_collection():
             cur.close()
             conn.close()
 
-
 @app.route('/api/pedidos/<int:pedido_id>/aprovar', methods=['PUT'])
 def aprovar_pedido(pedido_id):
     """Permite que o administrador aprove ou rejeite um pedido."""
@@ -733,13 +839,13 @@ def aprovar_pedido(pedido_id):
     cur = conn.cursor()
     try:
         payload = request.json or {}
-        aprovado = payload.get('aprovado')  # True ou False
-        if aprovado is None:
-            return jsonify({'error': 'Campo "aprovado" é obrigatório'}), 400
+        novo_status = payload.get('status')  # Espera 'Aprovado' ou 'Rejeitado'
+        if novo_status not in ['Aprovado', 'Rejeitado']:
+            return jsonify({'error': 'Status inválido. Use "Aprovado" ou "Rejeitado".'}), 400
 
-        cur.execute('UPDATE pedidos SET aprovado = %s WHERE id = %s', (aprovado, pedido_id))
+        cur.execute('UPDATE pedidos SET status = %s WHERE id = %s', (novo_status, pedido_id))
         conn.commit()
-        return jsonify({'message': 'Status de aprovação atualizado com sucesso'}), 200
+        return jsonify({'message': 'Status do pedido atualizado com sucesso'}), 200
     except Exception as e:
         print(f"Error updating approval status: {e}")
         return jsonify({'error': 'internal server error'}), 500

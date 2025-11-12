@@ -5,18 +5,93 @@
 
 const API_BASE = 'https://cemiterio-0elv.onrender.com/api';
 
-let token = localStorage.getItem('cem_token') || null;
+let token = localStorage.getItem('cem_access_token') || null;
 let currentUser = null; // populated after successful login
 
 function authHeaders(){ return token ? { 'Authorization': 'Bearer ' + token } : {}; }
 
+// --- FUNÇÃO API ATUALIZADA PARA REFRESH TOKEN ---
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+    failedQueue.forEach(prom => {
+        if (error) {
+            prom.reject(error);
+        } else {
+            prom.resolve(token);
+        }
+    });
+    failedQueue = [];
+};
+
 async function api(path, opts = {}){
     opts.headers = Object.assign({'Content-Type':'application/json'}, authHeaders(), opts.headers || {});
-    const res = await fetch(API_BASE + '/' + path, opts);
+    
+    const originalRequest = async () => fetch(API_BASE + '/' + path, opts);
+
+    let res = await originalRequest();
+
+    if (res.status === 401) {
+        if (isRefreshing) {
+            return new Promise((resolve, reject) => {
+                failedQueue.push({ resolve, reject });
+            })
+            .then(newToken => {
+                opts.headers['Authorization'] = 'Bearer ' + newToken;
+                return originalRequest();
+            })
+            .then(r => r.json());
+        }
+
+        isRefreshing = true;
+        const refreshToken = localStorage.getItem('cem_refresh_token');
+        if (!refreshToken) {
+            logoutUser();
+            return Promise.reject(new Error('Sessão expirada.'));
+        }
+
+        try {
+            const refreshRes = await fetch(API_BASE + '/token/refresh', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ refresh_token: refreshToken })
+            });
+
+            if (!refreshRes.ok) throw new Error('Não foi possível renovar a sessão.');
+
+            const { access_token } = await refreshRes.json();
+            token = access_token;
+            localStorage.setItem('cem_access_token', access_token);
+            opts.headers['Authorization'] = 'Bearer ' + access_token;
+            
+            processQueue(null, access_token);
+            res = await originalRequest(); // Tenta a requisição original novamente
+
+        } catch (e) {
+            processQueue(e, null);
+            logoutUser();
+            return Promise.reject(e);
+        } finally {
+            isRefreshing = false;
+        }
+    }
+
     if(res.status === 204) return null;
     const j = await res.json().catch(()=>null);
     if(!res.ok) throw new Error((j && j.error) ? j.error : ('HTTP ' + res.status));
     return j;
+}
+
+// Função para deslogar o usuário e limpar o estado
+function logoutUser() {
+    api('logout', { method: 'POST' }).catch(err => console.error("Logout API call failed:", err)); // Tenta invalidar o token no backend
+    token = null;
+    currentUser = null;
+    localStorage.removeItem('cem_access_token');
+    localStorage.removeItem('cem_refresh_token');
+    location.hash = '#login';
+    render();
 }
 
 // Função para verificar se o usuário está logado
@@ -117,10 +192,10 @@ async function getPedidos() {
 }
 
 // Função para aprovar ou rejeitar um pedido
-async function updatePedidoAprovacao(pedidoId, aprovado) {
+async function updatePedidoStatus(pedidoId, status) {
     return api(`pedidos/${pedidoId}/aprovar`, {
         method: 'PUT',
-        body: JSON.stringify({ aprovado })
+        body: JSON.stringify({ status })
     });
 }
 
@@ -454,9 +529,10 @@ async function bindLogin(container){
         if(!u || !p){ alert('Informe usuário e senha'); return; }
         try{
             const res = await login(u,p);
-            token = res.token;
+            token = res.access_token;
             currentUser = res.user; // res.user agora contém todos os dados
-            localStorage.setItem('cem_token', token);
+            localStorage.setItem('cem_access_token', res.access_token);
+            localStorage.setItem('cem_refresh_token', res.refresh_token);
             location.hash = '#catalog';
             render();
         }catch(e){ alert('Erro: ' + e.message); }
@@ -576,12 +652,7 @@ async function bindProfile(container) {
                 try {
                     await deleteUser(currentUser.id);
                     alert('Sua conta foi excluída com sucesso.');
-                    // Logout
-                    token = null;
-                    currentUser = null;
-                    localStorage.removeItem('cem_token');
-                    location.hash = '#login';
-                    render();
+                    logoutUser(); // Usa a nova função de logout
                 } catch (e) {
                     alert('Erro ao excluir sua conta: ' + e.message);
                 }
@@ -610,12 +681,7 @@ async function bindEditProfile(container) {
         try {
             await updateUser(currentUser.id, payload);
             alert('Perfil atualizado com sucesso! Por favor, faça login novamente.');
-            // Força o logout para que as novas informações (e token, se a senha mudou) sejam carregadas
-            token = null;
-            currentUser = null;
-            localStorage.removeItem('cem_token');
-            location.hash = '#login';
-            render();
+            logoutUser(); // Usa a nova função de logout
         } catch (e) {
             alert('Erro ao atualizar o perfil: ' + e.message);
         }
@@ -821,8 +887,7 @@ async function bindPedidos(container) {
                 <div>
                     <strong>Pedido #${p.id}</strong> (Total: R$ ${Number(p.total).toFixed(2)})<br>
                     <small>Status: ${p.status} | Cliente: ${p.nome} | Data: ${new Date(p.created_at).toLocaleDateString()}</small><br>
-                    <small>Aprovado: ${p.aprovado ? 'Sim' : 'Não'}</small><br>
-                    ${currentUser?.role === 'admin' ? `
+                    ${currentUser?.role === 'admin' && p.status === 'Pendente' ? `
                         <button class="btn btn-primary" data-aprovar="${p.id}">Aprovar</button>
                         <button class="btn btn-danger" data-rejeitar="${p.id}">Rejeitar</button>
                     ` : ''}
@@ -836,7 +901,7 @@ async function bindPedidos(container) {
                 btn.onclick = async () => {
                     const pedidoId = btn.dataset.aprovar;
                     try {
-                        await updatePedidoAprovacao(pedidoId, true);
+                        await updatePedidoStatus(pedidoId, 'Aprovado');
                         alert('Pedido aprovado com sucesso!');
                         render();
                     } catch (e) {
@@ -849,7 +914,7 @@ async function bindPedidos(container) {
                 btn.onclick = async () => {
                     const pedidoId = btn.dataset.rejeitar;
                     try {
-                        await updatePedidoAprovacao(pedidoId, false);
+                        await updatePedidoStatus(pedidoId, 'Rejeitado');
                         alert('Pedido rejeitado com sucesso!');
                         render();
                     } catch (e) {
@@ -1391,7 +1456,7 @@ function renderHeader(){
         profileBtn.onclick = ()=>{ location.hash = '#profile'; render(); }; 
         c.appendChild(profileBtn);
         
-        const out = document.createElement('button'); out.className='btn btn-ghost'; out.textContent='Sair'; out.onclick = ()=>{ token=null; localStorage.removeItem('cem_token'); currentUser=null; location.hash = '#catalog'; render(); }; c.appendChild(out);
+        const out = document.createElement('button'); out.className='btn btn-ghost'; out.textContent='Sair'; out.onclick = logoutUser; c.appendChild(out);
     }
     renderNavigation(); // Renderiza a navegação principal
 }
