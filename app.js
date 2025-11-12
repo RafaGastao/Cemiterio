@@ -1276,8 +1276,8 @@ function renderEditFinanceiro(financeiro) {
                 <div class="form-row"><label>Data</label><input id="fnData" type="date" class="input" value="${financeiro.data}" required></div>
                 <div class="form-row"><label>Status</label>
                     <select id="fnStatus" class="input">
-                        <option value="pendente" ${financeiro.status === 'pendente' ? 'selected' : ''}>Pendente</option>
-                        <option value="pago" ${financeiro.status === 'pago' ? 'selected' : ''}>Pago</option>
+                        <option value="pendente" ${financeiro.status.toLowerCase() === 'pendente' ? 'selected' : ''}>Pendente</option>
+                        <option value="pago" ${financeiro.status.toLowerCase() === 'pago' ? 'selected' : ''}>Pago</option>
                     </select>
                 </div>
                 <div class="footer-actions">

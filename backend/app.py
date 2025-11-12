@@ -7,6 +7,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import json
 import base64
+from threading import Thread
 
 from flask import Flask, jsonify, request, g, send_from_directory, Response
 from flask_cors import CORS 
@@ -50,6 +51,15 @@ app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', app.config['MAIL_USERNAME'])
 app.config['MAIL_TIMEOUT'] = 10  # Adiciona um timeout de 10 segundos
 mail = Mail(app)
+
+# --- FUNÇÃO PARA ENVIO DE E-MAIL ASSÍNCRONO ---
+def send_async_email(app, msg):
+    with app.app_context():
+        try:
+            mail.send(msg)
+            app.logger.info("E-mail de recuperação enviado com sucesso.")
+        except Exception as e:
+            app.logger.error(f"Falha ao enviar e-mail de forma assíncrona: {e}")
 
 # Modificado para usar variável de ambiente para a URL do frontend e ser mais específico na rota
 frontend_url = os.getenv('FRONTEND_URL', 'http://127.0.0.1:5500')
@@ -315,11 +325,15 @@ def forgot_password():
                 recipients=[email]
             )
             msg.body = f"Olá {user['name']},\n\nPara redefinir sua senha, clique no link a seguir: {reset_link}\n\nSe você não solicitou esta alteração, ignore este e-mail.\n"
-            mail.send(msg)
-            app.logger.info(f"Password reset email sent to {email}")
+            
+            # Envia o e-mail em uma thread separada para não bloquear a requisição
+            thr = Thread(target=send_async_email, args=[app, msg])
+            thr.start()
+            
+            app.logger.info(f"Solicitação de recuperação de senha para {email}. E-mail sendo enviado em segundo plano.")
         except Exception as e:
-            app.logger.error(f"Failed to send password reset email: {e}")
-            return jsonify({'error': 'Failed to send email'}), 500
+            app.logger.error(f"Falha ao iniciar a thread de envio de e-mail: {e}")
+            # Não retorna erro para o usuário, apenas loga. A resposta genérica abaixo é suficiente.
 
     cur.close()
     conn.close()
