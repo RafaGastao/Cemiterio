@@ -14,6 +14,7 @@ from flask_mail import Mail, Message
 
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP, AES
+from Crypto.Util.Padding import pad, unpad
 
 import jwt 
 import datetime
@@ -68,14 +69,12 @@ def decrypt_request_payload(payload):
         cipher_rsa = PKCS1_OAEP.new(server_private_key)
         session_key = cipher_rsa.decrypt(encrypted_key)
 
-        # Decriptografa os dados com a chave AES
-        cipher_aes = AES.new(session_key, AES.MODE_CBC, iv)
-        decrypted_data = cipher_aes.decrypt(ciphertext)
+        # Decriptografa os dados com a chave AES no modo CBC
+        cipher_aes = AES.new(session_key, AES.MODE_CBC, iv=iv)
+        decrypted_data = unpad(cipher_aes.decrypt(ciphertext), AES.block_size)
         
-        # Remove o padding
-        unpadded_data = decrypted_data[:-decrypted_data[-1]]
-        return json.loads(unpadded_data.decode('utf-8'))
-    except Exception as e:
+        return json.loads(decrypted_data.decode('utf-8'))
+    except (ValueError, KeyError, TypeError) as e:
         app.logger.error(f"Payload decryption failed: {e}")
         return None
 
@@ -88,21 +87,17 @@ def encrypt_response_payload(data, user_id):
         client_public_key = RSA.import_key(client_pub_key_str)
         
         # Gera uma chave de sessão AES
-        session_key = os.urandom(16)
-        iv = os.urandom(16)
+        session_key = os.urandom(32) # Chave de 256 bits (32 bytes)
+        iv = os.urandom(16) # IV de 16 bytes para CBC
 
         # Criptografa a chave de sessão com a chave pública do cliente
         cipher_rsa = PKCS1_OAEP.new(client_public_key)
         encrypted_key = cipher_rsa.encrypt(session_key)
 
-        # Criptografa os dados com AES
-        cipher_aes = AES.new(session_key, AES.MODE_CBC, iv)
-        data_bytes = json.dumps(data).encode('utf-8')
-        
-        # Adiciona padding
-        pad_len = 16 - (len(data_bytes) % 16)
-        padded_data = data_bytes + bytes([pad_len] * pad_len)
-        
+        # Criptografa os dados com AES-CBC
+        cipher_aes = AES.new(session_key, AES.MODE_CBC, iv=iv)
+        data_bytes = json.dumps(data, default=str).encode('utf-8')
+        padded_data = pad(data_bytes, AES.block_size)
         ciphertext = cipher_aes.encrypt(padded_data)
 
         # Codifica tudo em Base64 para transporte

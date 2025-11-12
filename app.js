@@ -81,8 +81,8 @@ const cryptoModule = (() => {
         // Criptografa um payload para enviar ao servidor
         encrypt: async (data) => {
             if (!serverPublicKey) throw new Error("Server public key not available.");
-            const sessionKey = await window.crypto.subtle.generateKey({ name: "AES-CBC", length: 128 }, true, ["encrypt", "decrypt"]);
-            const iv = window.crypto.getRandomValues(new Uint8Array(16));
+            const sessionKey = await window.crypto.subtle.generateKey({ name: "AES-CBC", length: 256 }, true, ["encrypt", "decrypt"]);
+            const iv = window.crypto.getRandomValues(new Uint8Array(16)); // IV de 16 bytes para CBC
 
             const encryptedKey = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, serverPublicKey, await window.crypto.subtle.exportKey("raw", sessionKey));
             
@@ -103,8 +103,9 @@ const cryptoModule = (() => {
             const iv = Uint8Array.from(atob(encryptedPayload.iv), c => c.charCodeAt(0));
             const data = Uint8Array.from(atob(encryptedPayload.data), c => c.charCodeAt(0));
 
-            const sessionKey = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, clientKeyPair.privateKey, encryptedKey);
-            const decryptedData = await window.crypto.subtle.decrypt({ name: "AES-CBC", iv }, await window.crypto.subtle.importKey("raw", sessionKey, "AES-CBC", true, ["decrypt"]), data);
+            const sessionKeyData = await window.crypto.subtle.decrypt({ name: "RSA-OAEP" }, clientKeyPair.privateKey, encryptedKey);
+            const sessionKey = await window.crypto.subtle.importKey("raw", sessionKeyData, "AES-CBC", true, ["decrypt"]);
+            const decryptedData = await window.crypto.subtle.decrypt({ name: "AES-CBC", iv }, sessionKey, data);
             
             return JSON.parse(new TextDecoder().decode(decryptedData));
         }
@@ -814,43 +815,6 @@ async function bindCart(container){
 
     const goCheckout = container.querySelector('#goCheckout'); if(goCheckout) goCheckout.onclick = ()=>{ location.hash = '#checkout'; render(); };
     const back = container.querySelector('#backCatalog'); if(back) back.onclick = ()=>{ location.hash = '#catalog'; render(); };
-}
-
-async function bindCheckout(container){
-    const summary = container.querySelector('#checkoutSummary');
-    try{
-        const cart = await getCart(currentUser?.id||null);
-        if(!cart || !cart.length){ location.hash = '#catalog'; render(); return; }
-        const catalog = await getCatalog();
-        const itens = cart.map(i => { const p = catalog.find(c=>c.id==i.produto_id)||{}; return { produto_id: i.produto_id, quantidade: i.quantidade, preco: Number(p.preco||0) }; });
-        const total = itens.reduce((s,it)=> s + (it.preco * it.quantidade), 0);
-        summary.innerHTML = `<h3>Total: R$ ${total.toFixed(2)}</h3>`;
-    }catch(e){ summary.innerHTML = '<p style="color:red">Erro ao calcular total</p>'; }
-
-    const form = container.querySelector('#checkoutForm'); if(!form) return;
-    form.onsubmit = async (e) => {
-        e.preventDefault();
-        try{
-            const cart = await getCart(currentUser?.id||null);
-            const catalog = await getCatalog();
-            const itens = cart.map(i => { const p = catalog.find(c=>c.id==i.produto_id)||{}; return { produto_id: i.produto_id, quantidade: i.quantidade, preco: Number(p.preco||0) }; });
-            const total = itens.reduce((s,it)=> s + (it.preco * it.quantidade), 0);
-            const payload = {
-                user_id: currentUser?.id || null,
-                nome: el('ckNome').value,
-                cpf: el('ckCPF').value,
-                email: el('ckEmail').value,
-                telefone: el('ckTel').value,
-                forma_pagamento: el('ckPagto').value,
-                total,
-                itens
-            };
-            await createOrder(payload);
-            await clearCart(currentUser?.id||null);
-            location.hash = '#success'; render();
-        }catch(e){ alert('Erro ao enviar pedido: '+e.message); }
-    };
-    const cancel = el('cancelCheckout'); if(cancel) cancel.onclick = ()=>{ location.hash = '#cart'; render(); };
 }
 
 // --- NOVOS BINDS PARA PERFIL ---
