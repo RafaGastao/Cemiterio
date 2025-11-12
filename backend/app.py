@@ -21,10 +21,26 @@ import jwt
 import datetime
 
 # --- CONFIGURAÇÃO DE CRIPTOGRAFIA ---
-# Gera um par de chaves RSA para o servidor na inicialização
-server_key = RSA.generate(2048)
-server_private_key = server_key
-server_public_key = server_key.publickey().export_key()
+# Carrega as chaves RSA a partir de variáveis de ambiente para garantir consistência entre os workers.
+try:
+    private_key_pem = os.getenv('SERVER_PRIVATE_KEY_PEM')
+    public_key_pem = os.getenv('SERVER_PUBLIC_KEY_PEM')
+
+    if not private_key_pem or not public_key_pem:
+        raise ValueError("As variáveis de ambiente SERVER_PRIVATE_KEY_PEM e SERVER_PUBLIC_KEY_PEM não foram definidas.")
+
+    server_private_key = RSA.import_key(private_key_pem)
+    server_public_key_export = public_key_pem.encode('utf-8') # A chave pública já está no formato de exportação
+
+    # Log para confirmar que as chaves foram carregadas
+    logging.info("Chaves RSA do servidor carregadas com sucesso a partir das variáveis de ambiente.")
+
+except Exception as e:
+    logging.critical(f"ERRO CRÍTICO: Falha ao carregar as chaves RSA. A aplicação não pode operar de forma segura. Erro: {e}")
+    # Em um cenário real, você poderia querer impedir a aplicação de iniciar.
+    server_private_key = None
+    server_public_key_export = None
+
 # Armazena as chaves públicas dos clientes em memória (em produção, usar Redis ou similar)
 client_public_keys = {}
 
@@ -270,7 +286,9 @@ def api_root():
 @app.route('/api/security/public-key', methods=['GET'])
 def get_server_public_key():
     """Fornece a chave pública RSA do servidor para os clientes."""
-    return jsonify({'public_key': server_public_key.decode('utf-8')})
+    if not server_public_key_export:
+        return jsonify({'error': 'A chave pública do servidor não está configurada.'}), 503
+    return jsonify({'public_key': server_public_key_export.decode('utf-8')})
 
 @app.route('/api/security/register-key', methods=['POST'])
 def register_client_key():

@@ -5,34 +5,44 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Cemitério Online</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 </head>
 <body>
   <header>
     <div class="logo">
-      <h1><i class="icon-tombstone"></i> Cemitério</h1>
+      <a href="#home">Cemitério Online</a>
     </div>
     <nav id="mainNav">
-      <!-- O conteúdo da navegação será gerado pelo app.js -->
+      <button data-route="home">Início</button>
+      <button data-route="users">Usuários</button>
+      <button data-route="sectors">Setores</button>
+      <button data-route="dead">Usuários Falecidos</button>
+      <button data-route="finance">Financeiro</button>
+      <button data-route="catalog">Catálogo</button>
+      <button data-route="setor-vagas">Vagas por Setor</button>
+      <button data-route="pedidos">Pedidos</button> <!-- Novo botão para pedidos -->
     </nav>
+
     <div id="userControls" class="user-controls">
-      <!-- Controles de usuário (login/logout) -->
+      <!-- preenchido por app.js: mostra login / usuário logado / logout -->
     </div>
-    <button id="hamburgerMenu" class="hamburger-menu">&#9776;</button>
+    <button id="hamburgerMenu" class="hamburger">&#9776;</button>
   </header>
 
   <main id="app">
-    <!-- Conteúdo principal da aplicação -->
+    <!-- Content injected by app.js -->
+    <div class="card">
+      <h2>Carregando...</h2>
+    </div>
   </main>
 
   <footer>
-    <p>&copy; 2024 Cemitério Online. Todos os direitos reservados.</p>
-    <div class="footer-links">
-      <a href="/termos-de-uso.html" target="_blank">Termos de Uso</a>
-      <span>&nbsp;|&nbsp;</span>
+    <p>&copy; 2025 Cemitério Online. Todos os direitos reservados.</p>
+    <p>
+      <a href="/termos-de-uso.html" target="_blank">Termos de Uso</a> | 
       <a href="/politica-de-privacidade.html" target="_blank">Política de Privacidade</a>
-    </div>
+    </p>
   </footer>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

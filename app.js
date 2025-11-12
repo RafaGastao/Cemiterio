@@ -1857,3 +1857,103 @@ function hashCPF(cpf) {
     const hash = CryptoJS.PBKDF2(cpf, salt, { keySize: 256 / 32, iterations: 1000 });
     return `${salt.toString(CryptoJS.enc.Hex)}:${hash.toString(CryptoJS.enc.Hex)}`;
 }
+
+async function bindCheckout(container){
+    const form = container.querySelector('#checkoutForm');
+    if(!form) return;
+
+    // Preenche os dados do usuário logado
+    if(currentUser){
+        el('ckNome').value = currentUser.name || '';
+        el('ckEmail').value = currentUser.email || '';
+    }
+
+    // Calcula e exibe o resumo do pedido
+    const summary = el('checkoutSummary');
+    try {
+        const cart = await getCart(currentUser?.id);
+        const catalog = await getCatalog();
+        let total = 0;
+        cart.forEach(item => {
+            const prod = catalog.find(p => p.id == item.produto_id);
+            if(prod) total += Number(prod.preco) * item.quantidade;
+        });
+        summary.innerHTML = `<h4>Total do Pedido: R$ ${total.toFixed(2)}</h4>`;
+    } catch(e) {
+        summary.innerHTML = `<p style="color:red">Erro ao carregar resumo.</p>`;
+    }
+
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        const cart = await getCart(currentUser?.id);
+        const catalog = await getCatalog();
+        let total = 0;
+        const itens = cart.map(item => {
+            const prod = catalog.find(p => p.id == item.produto_id);
+            const preco = Number(prod?.preco || 0);
+            total += preco * item.quantidade;
+            return { produto_id: item.produto_id, quantidade: item.quantidade, preco: preco };
+        });
+
+        const payload = {
+            user_id: currentUser?.id || null,
+            nome: el('ckNome').value,
+            cpf: hashCPF(el('ckCPF').value), // Aplica o hash no CPF aqui
+            email: el('ckEmail').value,
+            telefone: el('ckTel').value,
+            forma_pagamento: el('ckPagto').value,
+            total: total,
+            itens: itens
+        };
+        try{
+            await createOrder(payload);
+            await clearCart(currentUser?.id);
+            location.hash = '#success';
+            render();
+        }catch(err){
+            alert('Erro ao criar pedido: ' + err.message);
+        }
+    };
+    const cancel = el('cancelCheckout'); if(cancel) cancel.onclick = ()=>{ location.hash = '#cart'; render(); };
+}
+
+// --- NOVA FUNÇÃO PARA BIND DOS MENUS ---
+function bindNavigation() {
+    const nav = document.getElementById('mainNav');
+    if (!nav) return;
+
+    // Eventos para os botões de rota
+    nav.querySelectorAll('button[data-route]').forEach(b => {
+        b.onclick = () => {
+            location.hash = b.dataset.route;
+            render();
+            // Fecha o menu hambúrguer em mobile após clicar
+            document.getElementById('mainNav').classList.remove('open');
+        };
+    });
+
+    // Eventos para abrir/fechar dropdowns
+    nav.querySelectorAll('.nav-toggle').forEach(toggle => {
+        toggle.onclick = (e) => {
+            e.stopPropagation();
+            const parent = toggle.parentElement;
+            // Fecha outros dropdowns abertos
+            nav.querySelectorAll('.nav-item.open').forEach(openItem => {
+                if (openItem !== parent) {
+                    openItem.classList.remove('open');
+                }
+            });
+            // Abre ou fecha o dropdown atual
+            parent.classList.toggle('open');
+        };
+    });
+
+    // Fecha dropdown se clicar fora
+    document.addEventListener('click', (e) => {
+        if (!nav.contains(e.target)) {
+            nav.querySelectorAll('.nav-item.open').forEach(openItem => {
+                openItem.classList.remove('open');
+            });
+        }
+    });
+}
