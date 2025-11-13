@@ -1740,7 +1740,7 @@ function render(){
     if(route === 'login'){ app.innerHTML = renderLogin(); setTimeout(()=>bindLogin(app),0); return; }
     if(route === 'catalog'){ app.innerHTML = renderCatalog(); setTimeout(()=>bindCatalog(app),0); return; }
     if(route === 'cart'){ app.innerHTML = renderCart(); setTimeout(()=>bindCart(app),0); return; }
-    if(route === 'checkout'){ if(!currentUser){ location.hash = '#login'; return; } app.innerHTML = renderCheckout(); setTimeout(()=>bindCheckout(app),0); return; }
+    if(route === 'checkout'){ if(!currentUser){ location.hash = '#login'; render(); return; } app.innerHTML = renderCheckout(); setTimeout(()=>bindCheckout(app),0); return; }
     if(route === 'success'){ app.innerHTML = renderSuccess(); setTimeout(()=>{ const b = el('newCatalog'); if(b) b.onclick = ()=>{ location.hash = '#catalog'; render(); }; },0); return; }
     
     // Rota de acesso negado (fallback caso alguém navegue diretamente para #access-denied)
@@ -1856,4 +1856,67 @@ function hashCPF(cpf) {
     const salt = CryptoJS.lib.WordArray.random(16); // Gera um salt aleatório
     const hash = CryptoJS.PBKDF2(cpf, salt, { keySize: 256 / 32, iterations: 1000 });
     return `${salt.toString(CryptoJS.enc.Hex)}:${hash.toString(CryptoJS.enc.Hex)}`;
+}
+
+// --- NOVA FUNÇÃO BINDCHECKOUT ---
+async function bindCheckout(container) {
+    const form = container.querySelector('#checkoutForm');
+    if (!form) return;
+
+    // Preenche o nome e email do usuário logado, se disponível
+    if (currentUser) {
+        el('ckNome').value = currentUser.name || '';
+        el('ckEmail').value = currentUser.email || '';
+    }
+
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        const cart = await getCart(currentUser?.id || null);
+        if (!cart || cart.length === 0) {
+            alert('Seu carrinho está vazio.');
+            location.hash = '#catalog';
+            render();
+            return;
+        }
+
+        const catalog = await getCatalog();
+        let total = 0;
+        const itens = cart.map(item => {
+            const prod = catalog.find(p => p.id == item.produto_id) || { preco: 0 };
+            total += Number(prod.preco || 0) * item.quantidade;
+            return {
+                produto_id: item.produto_id,
+                quantidade: item.quantidade,
+                preco: prod.preco
+            };
+        });
+
+        const payload = {
+            user_id: currentUser?.id || null,
+            nome: el('ckNome').value,
+            cpf: el('ckCPF').value,
+            email: el('ckEmail').value,
+            telefone: el('ckTel').value,
+            forma_pagamento: el('ckPagto').value,
+            total: total,
+            itens: itens
+        };
+
+        try {
+            await createOrder(payload);
+            await clearCart(currentUser?.id || null); // Limpa o carrinho após o pedido
+            location.hash = '#success';
+            render();
+        } catch (err) {
+            alert('Erro ao criar pedido: ' + err.message);
+        }
+    };
+
+    const cancelBtn = el('cancelCheckout');
+    if (cancelBtn) {
+        cancelBtn.onclick = () => {
+            location.hash = '#cart';
+            render();
+        };
+    }
 }
