@@ -16,6 +16,7 @@ from flask_mail import Mail, Message
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP, AES
 from Crypto.Util.Padding import pad, unpad
+from Crypto.Hash import SHA256
 
 import jwt 
 import datetime
@@ -87,7 +88,8 @@ def decrypt_request_payload(payload):
         ciphertext = base64.b64decode(payload['data'])
 
         # Decriptografa a chave AES com a chave privada do servidor
-        cipher_rsa = PKCS1_OAEP.new(server_private_key)
+        # Especifica SHA256 para corresponder ao frontend (Web Crypto API)
+        cipher_rsa = PKCS1_OAEP.new(server_private_key, hashAlgo=SHA256)
         session_key = cipher_rsa.decrypt(encrypted_key)
 
         # Decriptografa os dados com a chave AES no modo CBC
@@ -112,7 +114,8 @@ def encrypt_response_payload(data, user_id):
         iv = os.urandom(16) # IV de 16 bytes para CBC
 
         # Criptografa a chave de sessão com a chave pública do cliente
-        cipher_rsa = PKCS1_OAEP.new(client_public_key)
+        # Especifica SHA256 para corresponder ao frontend
+        cipher_rsa = PKCS1_OAEP.new(client_public_key, hashAlgo=SHA256)
         encrypted_key = cipher_rsa.encrypt(session_key)
 
         # Criptografa os dados com AES-CBC
