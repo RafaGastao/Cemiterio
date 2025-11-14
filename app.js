@@ -268,7 +268,7 @@ function isAdmin() {
 
 // API helpers (Original)
 const login = (username, password) => api('login', { method: 'POST', body: JSON.stringify({ username, password }), skipEncryption: true });
-const forgotPassword = (email) => api('forgot-password', { method: 'POST', body: JSON.stringify({ email }), skipEncryption: true });
+const forgotPassword = (email, username) => api('forgot-password', { method: 'POST', body: JSON.stringify({ email, username }), skipEncryption: true });
 const resetPassword = (token, password) => api(`reset-password/${token}`, { method: 'POST', body: JSON.stringify({ password }), skipEncryption: true });
 const getCatalog = () => api('catalogo');
 const getCart = (userId = null) => {
@@ -541,7 +541,7 @@ function renderNewSetor(){
             <h2>Novo Setor</h2>
             <form id="newSetorForm">
                 <div class="form-row"><label>Nome do Setor</label><input id="sName" class="input" required></div>
-                <div class="form-row"><label>Vagas Disponíveis</label><input id="sVagas" type="number" min="0" class="input" required></div>
+                <div class="form-row"><label>Vagas Disponíveis</label><input id="sVagas" type="number" min="0" max="150" class="input" required></div>
                 <div class="footer-actions">
                     <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-ghost" onclick="location.hash='#setores';render()">Cancelar</button>
@@ -688,14 +688,18 @@ function renderForgotPassword() {
     return `
         <div class="card">
             <h2>Recuperar Senha</h2>
-            <p>Informe seu e-mail para receber o link de recuperação.</p>
+            <p>Informe seu e-mail e nome de usuário para continuar.</p>
             <form id="forgotPasswordForm">
                 <div class="form-row">
                     <label>Email</label>
                     <input id="fpEmail" type="email" class="input" required/>
                 </div>
+                <div class="form-row">
+                    <label>Nome de Usuário</label>
+                    <input id="fpUsername" type="text" class="input" required/>
+                </div>
                 <div class="footer-actions">
-                    <button type="submit" class="btn btn-primary">Enviar</button>
+                    <button type="submit" class="btn btn-primary">Continuar</button>
                     <button type="button" class="btn btn-ghost" onclick="location.hash='#login';render()">Cancelar</button>
                 </div>
             </form>
@@ -765,10 +769,11 @@ async function bindForgotPassword(container) {
     form.onsubmit = async (e) => {
         e.preventDefault();
         const email = el('fpEmail').value;
+        const username = el('fpUsername').value;
         try {
-            const res = await forgotPassword(email);
-            alert(res.message);
-            location.hash = '#login';
+            const res = await forgotPassword(email, username);
+            // Redireciona para a tela de reset com o token recebido
+            location.hash = `#reset-password/${res.token}`;
             render();
         } catch (e) {
             alert('Erro: ' + e.message);
@@ -1344,12 +1349,33 @@ async function bindNewUser(container){
 
     form.onsubmit = async (e) => {
         e.preventDefault();
+
+        const username = el('uUser').value;
+        const password = el('uPass').value;
+        const email = el('uEmail').value;
+
+        // --- VALIDAÇÕES ADICIONAIS ---
+        if (username.includes(' ')) {
+            alert('O nome de usuário não pode conter espaços.');
+            return;
+        }
+        if (password.length < 6) {
+            alert('A senha deve ter no mínimo 6 caracteres.');
+            return;
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (email && !emailRegex.test(email)) {
+            alert('Por favor, insira um endereço de e-mail válido.');
+            return;
+        }
+        // --- FIM DAS VALIDAÇÕES ---
+
         const roleSelect = el('uRole');
         const payload = {
             name: el('uName').value,
-            username: el('uUser').value,
-            email: el('uEmail').value,
-            password: el('uPass').value,
+            username: username,
+            email: email,
+            password: password,
             role: roleSelect ? roleSelect.value : 'visitante' // Default to 'visitante' if selector is not present
         };
         try{
@@ -1581,7 +1607,7 @@ function renderEditSetor(setor) {
             <h2>Editar Setor</h2>
             <form id="editSetorForm">
                 <div class="form-row"><label>Nome do Setor</label><input id="sName" class="input" value="${setor.name}" required></div>
-                <div class="form-row"><label>Vagas Disponíveis</label><input id="sVagas" type="number" min="0" class="input" value="${setor.vagas}" required></div>
+                <div class="form-row"><label>Vagas Disponíveis</label><input id="sVagas" type="number" min="0" max="150" class="input" value="${setor.vagas}" required></div>
                 <div class="footer-actions">
                     <button type="submit" class="btn btn-primary">Salvar</button>
                     <button type="button" class="btn btn-ghost" onclick="location.hash='#setores';render()">Cancelar</button>

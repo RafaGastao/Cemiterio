@@ -82,14 +82,6 @@ Este é um sistema de gestão completo para cemitérios, desenvolvido como uma S
     DB_PORT=5432
     SECRET_KEY=uma-chave-secreta-forte-e-aleatoria
     FRONTEND_URL=http://127.0.0.1:5500
-
-    # --- Configuração de E-mail (para recuperação de senha) ---
-    # Exemplo para Gmail. Adapte para seu provedor de SMTP.
-    MAIL_SERVER=smtp.gmail.com
-    MAIL_PORT=587
-    MAIL_USE_TLS=true
-    MAIL_USERNAME=seu-email@gmail.com
-    MAIL_PASSWORD=sua-senha-de-app-do-email
     ```
 
 5.  Inicie o servidor backend:
@@ -122,13 +114,6 @@ Para que a aplicação funcione corretamente, especialmente em produção (ex: R
 
 #### Chave Secreta do Flask
 - `SECRET_KEY`: Uma chave longa e aleatória para a segurança das sessões e tokens.
-
-#### Configuração de E-mail (para recuperação de senha)
-- `MAIL_SERVER`: Servidor SMTP (ex: `smtp.gmail.com`).
-- `MAIL_PORT`: Porta do servidor SMTP (ex: `587` para TLS).
-- `MAIL_USE_TLS`: `true` ou `false`.
-- `MAIL_USERNAME`: Seu endereço de e-mail.
-- `MAIL_PASSWORD`: A senha do seu e-mail. **Atenção:** Se usar Gmail com verificação em duas etapas, você precisa gerar uma **"Senha de App"**.
 
 #### URL do Frontend
 - `FRONTEND_URL`: A URL base do seu frontend (ex: `http://127.0.0.1:5500` para local ou a URL do seu site no Render).
@@ -196,7 +181,7 @@ A aplicação implementa as seguintes medidas de segurança:
 - **Hashing de Senhas com Salt**: As senhas dos usuários são protegidas usando o algoritmo `PBKDF2-SHA256` com um salt único para cada usuário, garantindo que não sejam armazenadas em texto plano.
 - **Autenticação via JWT com Refresh Tokens**: O acesso é controlado por `Access Tokens` de curta duração e `Refresh Tokens` de longa duração, melhorando a segurança da sessão.
 - **Revogação de Tokens (Logout Seguro)**: Tokens de acesso são invalidados no momento do logout através de uma blacklist, impedindo sua reutilização.
-- **Recuperação de Senha Segura**: Implementado um fluxo de recuperação de senha via e-mail com tokens de uso único e tempo de expiração.
+- **Recuperação de Senha**: O usuário informa seu e-mail e nome de usuário. Se a combinação for válida, um token de uso único e curta duração é gerado, permitindo a redefinição da senha.
 - **Controle de Acesso Baseado em Função (RBAC)**: A API diferencia usuários `admin` e `visitante`, restringindo o acesso a endpoints críticos apenas para administradores.
 - **Proteção contra CORS**: O backend limita as requisições para origens permitidas (a URL do frontend), prevenindo que sites maliciosos façam requisições à API em nome do usuário.
 - **Hashing de Dados Sensíveis**: Dados como CPF são armazenados no banco de dados com hash e salt para maior proteção.

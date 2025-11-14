@@ -312,48 +312,36 @@ def register_client_key():
 def forgot_password():
     data = request.get_json()
     email = data.get('email')
-    if not email:
-        return jsonify({'error': 'Email is required'}), 400
+    username = data.get('username') # Novo campo
+    if not email or not username:
+        return jsonify({'error': 'Email e nome de usuário são obrigatórios'}), 400
 
     conn = get_db_connection()
-    if not conn: return jsonify({'error': 'DB connection error'}), 500
+    if not conn: return jsonify({'error': 'Falha na conexão com o banco de dados'}), 500
     cur = conn.cursor()
     
-    cur.execute("SELECT id, name FROM usuarios WHERE email = %s", (email,))
+    # Valida se o email e o usuário correspondem a uma conta existente
+    cur.execute("SELECT id, name FROM usuarios WHERE email = %s AND username = %s", (email, username))
     user = cur.fetchone()
 
     if user:
         token = str(uuid.uuid4())
-        expires_at = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+        expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=10) # Token de curta duração
         
         cur.execute(
             "INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (%s, %s, %s)",
             (user['id'], token, expires_at)
         )
         conn.commit()
-
-        reset_link = f"{frontend_url}/#reset-password/{token}"
-        
-        try:
-            msg = Message(
-                "Recuperação de Senha - Cemitério Online",
-                recipients=[email]
-            )
-            msg.body = f"Olá {user['name']},\n\nPara redefinir sua senha, clique no link a seguir: {reset_link}\n\nSe você não solicitou esta alteração, ignore este e-mail.\n"
-            
-            # Envia o e-mail em uma thread separada para não bloquear a requisição
-            thr = Thread(target=send_async_email, args=[app, msg])
-            thr.start()
-            
-            app.logger.info(f"Solicitação de recuperação de senha para {email}. E-mail sendo enviado em segundo plano.")
-        except Exception as e:
-            app.logger.error(f"Falha ao iniciar a thread de envio de e-mail: {e}")
-            # Não retorna erro para o usuário, apenas loga. A resposta genérica abaixo é suficiente.
-
-    cur.close()
-    conn.close()
-    # Resposta genérica para não revelar se um e-mail existe ou não no sistema
-    return jsonify({'message': 'Se o e-mail estiver cadastrado, um link de recuperação será enviado.'}), 200
+        cur.close()
+        conn.close()
+        # Retorna o token para o frontend
+        return jsonify({'token': token}), 200
+    else:
+        cur.close()
+        conn.close()
+        # Resposta de erro se a combinação não for encontrada
+        return jsonify({'error': 'Usuário ou email inválido'}), 404
 
 @app.route('/api/reset-password/<token>', methods=['POST'])
 def reset_password(token):
