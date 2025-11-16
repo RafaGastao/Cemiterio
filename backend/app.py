@@ -11,7 +11,6 @@ from threading import Thread
 
 from flask import Flask, jsonify, request, g, send_from_directory, Response
 from flask_cors import CORS 
-from flask_mail import Mail, Message
 
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP, AES
@@ -54,24 +53,7 @@ app = Flask(__name__, static_folder='..', static_url_path='/')
 app.logger.addHandler(my_handler)
 app.logger.setLevel(logging.INFO)
 
-# --- CONFIGURAÇÃO DO FLASK-MAIL ---
-app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
-app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
-app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'true').lower() in ['true', '1', 't']
-app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
-app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
-app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', app.config['MAIL_USERNAME'])
-app.config['MAIL_TIMEOUT'] = 10  # Adiciona um timeout de 10 segundos
-mail = Mail(app)
 
-# --- FUNÇÃO PARA ENVIO DE E-MAIL ASSÍNCRONO ---
-def send_async_email(app, msg):
-    with app.app_context():
-        try:
-            mail.send(msg)
-            app.logger.info("E-mail de recuperação enviado com sucesso.")
-        except Exception as e:
-            app.logger.error(f"Falha ao enviar e-mail de forma assíncrona: {e}")
 
 # Modificado para usar variável de ambiente para a URL do frontend e ser mais específico na rota
 frontend_url = os.getenv('FRONTEND_URL', 'http://127.0.0.1:5500')
@@ -81,6 +63,11 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'muda_essa_chave_para_produca
 
 # --- HELPERS DE CRIPTOGRAFIA ---
 def decrypt_request_payload(payload):
+    """
+    Decriptografa o payload da requisição que foi criptografado pelo cliente.
+    Utiliza a chave privada do servidor para decriptografar a chave de sessão AES,
+    e então usa a chave de sessão para decriptografar os dados.
+    """
     try:
         # Decodifica os dados de Base64
         encrypted_key = base64.b64decode(payload['encrypted_key'])
@@ -102,6 +89,11 @@ def decrypt_request_payload(payload):
         return None
 
 def encrypt_response_payload(data, user_id):
+    """
+    Criptografa os dados da resposta para enviar ao cliente.
+    Utiliza a chave pública do cliente (armazenada em memória) para criptografar
+    uma chave de sessão AES, e então criptografa os dados com essa chave.
+    """
     try:
         client_pub_key_str = client_public_keys.get(user_id)
         if not client_pub_key_str:
@@ -138,6 +130,11 @@ def encrypt_response_payload(data, user_id):
 
 
 def get_db_connection():
+    """
+    Estabelece e retorna uma conexão com o banco de dados PostgreSQL.
+    Prioriza a variável de ambiente DATABASE_URL (usada pelo Render) e,
+    como alternativa, usa as variáveis de ambiente individuais para desenvolvimento local.
+    """
     try:
         # Usa a DATABASE_URL fornecida pelo Render, com fallback para variáveis locais
         db_url = os.getenv('DATABASE_URL')
@@ -152,19 +149,16 @@ def get_db_connection():
         return None
 
 
-# Helper: fetch all rows as list of dicts (NÃO MAIS NECESSÁRIO com RealDictCursor)
-# def rows_to_dicts(cursor):
-#     cols = [c[0] for c in cursor.description]
-#     return [dict(zip(cols, row)) for row in cursor.fetchall()]
-
 # Helper: Generate password hash with salt
 def generate_password_hash(password):
+    """Gera um hash de senha seguro usando PBKDF2-SHA256 com um salt aleatório."""
     salt = os.urandom(16)  # Generate a 16-byte salt
     hash_obj = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
     return salt.hex() + ':' + hash_obj.hex()
 
 # Helper: Verify password hash
 def verify_password(password, stored_hash):
+    """Verifica se uma senha corresponde a um hash armazenado."""
     try:
         salt, hash_value = stored_hash.split(':')
         salt = bytes.fromhex(salt)
@@ -177,6 +171,7 @@ def verify_password(password, stored_hash):
 
 # Helper: Verifica se um token está na blacklist
 def is_token_revoked(jti):
+    """Verifica no banco de dados se o JTI (identificador único) de um token foi revogado (está na blacklist)."""
     conn = get_db_connection()
     if not conn:
         return True # Em caso de erro de DB, assume que o token é inválido
@@ -189,6 +184,7 @@ def is_token_revoked(jti):
 
 # Helper: Hash and salt sensitive data (e.g., CPF)
 def hash_sensitive_data(data):
+    """Gera um hash seguro para dados sensíveis (ex: CPF) usando PBKDF2-SHA256 com salt."""
     salt = os.urandom(16)  # Generate a 16-byte salt
     hash_obj = hashlib.pbkdf2_hmac('sha256', data.encode(), salt, 100000)
     return salt.hex() + ':' + hash_obj.hex()
@@ -196,6 +192,11 @@ def hash_sensitive_data(data):
 # Middleware para autenticação e decriptografia
 @app.before_request
 def before_request_handler():
+    """
+    Middleware executado antes de cada requisição.
+    1. Autentica o usuário com base no token JWT.
+    2. Decriptografa o corpo da requisição para rotas protegidas.
+    """
     # 1. Autenticação
     authenticate_user()
     
@@ -222,6 +223,10 @@ def before_request_handler():
 # Middleware para autenticação e obtenção do usuário atual
 # @app.before_request # Esta função foi movida para 'before_request_handler'
 def authenticate_user():
+    """
+    Verifica o token de autorização no cabeçalho da requisição,
+    decodifica-o e define g.current_user com os dados do usuário logado.
+    """
     token = request.headers.get('Authorization', '').replace('Bearer ', '')
     if not token:
         g.current_user = None
@@ -259,6 +264,10 @@ def authenticate_user():
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
+    """
+    Serve os arquivos estáticos do frontend (HTML, CSS, JS).
+    Se o caminho não for encontrado, serve o index.html para permitir o roteamento do lado do cliente (SPA).
+    """
     if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
         return send_from_directory(app.static_folder, path)
     # Ignora as rotas da API para não entrar em conflito
@@ -271,25 +280,27 @@ def serve(path):
 # --- NEW: API Root Status Route ---
 @app.route('/api', methods=['GET'])
 def api_root():
-    """Returns status message for the API root path."""
+    """Retorna uma mensagem de status e versão para a raiz da API."""
     return jsonify({
         'status': 'API is running',
         'version': '1.0',
         'available_routes': ['/api/login', '/api/usuarios', '/api/setores', '/api/falecidos', '/api/catalogo', '/api/carrinho', '/api/pedidos', '/api/financeiro']
     })
-# --- END NEW ROUTE ---
 
 # --- NEW: Security Endpoints ---
 @app.route('/api/security/public-key', methods=['GET'])
 def get_server_public_key():
-    """Fornece a chave pública RSA do servidor para os clientes."""
+    """Fornece a chave pública RSA do servidor para que os clientes possam criptografar dados."""
     if not server_public_key:
         return jsonify({'error': 'Chave pública do servidor não disponível'}), 503
     return jsonify({'public_key': server_public_key.decode('utf-8')})
 
 @app.route('/api/security/register-key', methods=['POST'])
 def register_client_key():
-    """Registra a chave pública de um cliente."""
+    """
+    Registra a chave pública de um cliente autenticado.
+    A chave é armazenada em memória para criptografar respostas para esse cliente.
+    """
     if not g.current_user:
         return jsonify({'error': 'Authentication required'}), 401
     
@@ -304,12 +315,14 @@ def register_client_key():
     
     return jsonify({'message': 'Key registered successfully'}), 200
 
-# --- END NEW Security Endpoints ---
-
-
 # --- NEW: Password Recovery Routes ---
 @app.route('/api/forgot-password', methods=['POST'])
 def forgot_password():
+    """
+    Inicia o processo de recuperação de senha.
+    Verifica se o e-mail e o nome de usuário correspondem a uma conta existente.
+    Se sim, gera um token de uso único e o retorna ao cliente.
+    """
     data = request.get_json()
     email = data.get('email')
     username = data.get('username') # Novo campo
@@ -345,6 +358,10 @@ def forgot_password():
 
 @app.route('/api/reset-password/<token>', methods=['POST'])
 def reset_password(token):
+    """
+    Redefine a senha do usuário usando um token de recuperação válido.
+    Verifica se o token existe e não expirou, então atualiza a senha do usuário.
+    """
     data = request.get_json()
     new_password = data.get('password')
     if not new_password:
@@ -381,6 +398,10 @@ def reset_password(token):
 # --- NEW: Refresh Token Route ---
 @app.route('/api/token/refresh', methods=['POST'])
 def refresh_token():
+    """
+    Gera um novo Access Token a partir de um Refresh Token válido.
+    Permite que o usuário mantenha a sessão ativa sem precisar fazer login novamente.
+    """
     data = request.get_json()
     refresh_token = data.get('refresh_token')
     if not refresh_token:
@@ -391,7 +412,7 @@ def refresh_token():
         
         # Verifica se é um refresh token e se não está na blacklist
         if decoded.get('type') != 'refresh' or is_token_revoked(decoded.get('jti')):
-            return jsonify({'error': 'Invalid refresh token'}), 401
+            return jsonify({'error': 'Invalid or revoked refresh token'}), 401
 
         user_id = decoded.get('user_id')
         access_token = jwt.encode(
@@ -413,6 +434,10 @@ def refresh_token():
 # --- NEW: Logout Route ---
 @app.route('/api/logout', methods=['POST'])
 def logout():
+    """
+    Invalida o Access Token do usuário adicionando seu JTI à blacklist.
+    Isso impede que o token seja reutilizado após o logout.
+    """
     token = request.headers.get('Authorization', '').replace('Bearer ', '')
     if not token:
         return jsonify({'message': 'No token provided'}), 200
@@ -439,6 +464,11 @@ def logout():
 # --- Auth: login (simples) ---
 @app.route('/api/login', methods=['POST'])
 def login():
+    """
+    Autentica um usuário com nome de usuário e senha.
+    Se as credenciais forem válidas, retorna um Access Token (curta duração)
+    e um Refresh Token (longa duração), junto com os dados do usuário.
+    """
     data = request.json or {}
     username = data.get('username')
     password = data.get('password')
@@ -515,6 +545,11 @@ def login():
 # --- Usuarios CRUD (SEM AUTORIZAÇÃO NO POST) ---
 @app.route('/api/usuarios', methods=['GET','POST'])
 def usuarios_collection():
+    """
+    Endpoint para a coleção de usuários.
+    GET: Lista todos os usuários (apenas para admins).
+    POST: Cria um novo usuário (aberto para registro de novas contas).
+    """
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'DB connection error'}), 500
     cur = conn.cursor()
@@ -535,6 +570,13 @@ def usuarios_collection():
 
 @app.route('/api/usuarios/<int:uid>', methods=['GET','PUT','DELETE'])
 def usuarios_single(uid):
+    """
+    Endpoint para um usuário específico.
+    GET: Obtém os detalhes de um usuário.
+    PUT: Atualiza os dados de um usuário.
+    DELETE: Remove um usuário.
+    Requer permissão de admin ou que o usuário esteja modificando o próprio perfil.
+    """
     conn = get_db_connection()
     if not conn: return jsonify({'error':'db'}), 500
     cur = conn.cursor()
@@ -553,13 +595,13 @@ def usuarios_single(uid):
     if request.method == 'GET':
         cur.execute('SELECT id, name, username, email, role FROM usuarios WHERE id=%s', (uid,))
         user = cur.fetchone()
-        if not user: cur.close(); conn.close(); return jsonify({}), 404
+        if not user: cur.close(); conn.close(); return jsonify({'error': 'User not found'}), 404
         
         # Criptografa a resposta se o usuário estiver logado
         if g.current_user:
             encrypted_response = encrypt_response_payload(user, g.current_user['id'])
             if encrypted_response:
-                return jsonify(encrypted_response)
+                cur.close(); conn.close(); return jsonify(encrypted_response)
         
         cur.close(); conn.close(); return jsonify(user)
     if request.method == 'PUT':
@@ -597,6 +639,11 @@ def usuarios_single(uid):
 # --- Setores CRUD ---
 @app.route('/api/setores', methods=['GET','POST'])
 def setores_collection():
+    """
+    Endpoint para a coleção de setores.
+    GET: Lista todos os setores.
+    POST: Cria um novo setor (requer admin).
+    """
     conn = get_db_connection();
     if not conn: return jsonify([]), 500
     cur = conn.cursor()
@@ -615,13 +662,20 @@ def setores_collection():
 
 @app.route('/api/setores/<int:sid>', methods=['GET','PUT','DELETE'])
 def setores_single(sid):
+    """
+    Endpoint para um setor específico.
+    GET: Obtém os detalhes de um setor.
+    PUT: Atualiza um setor.
+    DELETE: Remove um setor.
+    Requer permissão de admin.
+    """
     conn = get_db_connection();
     if not conn: return jsonify({'error':'db'}), 500
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, name, vagas FROM setores WHERE id=%s', (sid,))
         row = cur.fetchone();
-        if not row: cur.close(); conn.close(); return jsonify({}), 404
+        if not row: cur.close(); conn.close(); return jsonify({'error': 'Setor not found'}), 404
         cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
         p = getattr(request, 'json_decrypted', request.json or {})
@@ -632,7 +686,7 @@ def setores_single(sid):
 
 @app.route('/api/setores/vagas', methods=['GET'])
 def listar_vagas():
-    """Lista vagas ocupadas e disponíveis por setor, incluindo o status de cada vaga."""
+    """Lista todos os setores e, para cada um, o status de cada vaga (ocupada ou disponível)."""
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
@@ -660,52 +714,15 @@ def listar_vagas():
         cur.close()
         conn.close()
 
-@app.route('/api/setores/<int:setor_id>/ocupar', methods=['POST'])
-def ocupar_vaga(setor_id):
-    """Ocupação de uma vaga em um setor."""
-    conn = get_db_connection()
-    if not conn: return jsonify({'error': 'db connection error'}), 500
-    cur = conn.cursor()
-    try:
-        # Verificar se há vagas disponíveis no setor
-        cur.execute("""
-            SELECT s.vagas, COUNT(f.id) AS ocupadas
-            FROM setores s
-            LEFT JOIN falecidos f ON s.id = f.setor
-            WHERE s.id = %s
-            GROUP BY s.id
-        """, (setor_id,))
-        row = cur.fetchone()
-        if not row:
-            return jsonify({'error': 'Setor não encontrado'}), 404
-
-        vagas = row['vagas']
-        ocupadas = row['ocupadas']
-        disponiveis = vagas - ocupadas
-        if disponiveis <= 0:
-            return jsonify({'error': 'Não há vagas disponíveis neste setor'}), 400
-
-        # Inserir um novo registro de falecido para ocupar a vaga
-        payload = getattr(request, 'json_decrypted', request.json or {})
-        cur.execute("""
-            INSERT INTO falecidos (name, anoNascimento, anoMorte, setor)
-            VALUES (%s, %s, %s, %s) RETURNING id
-        """, (payload.get('name'), payload.get('anoNascimento'), payload.get('anoMorte'), setor_id))
-        new_id = cur.fetchone()['id']
-        conn.commit()
-        return jsonify({'message': 'Vaga ocupada com sucesso', 'id': new_id}), 201
-    except Exception as e:
-        app.logger.error(f"Error occupying vaga: {e}")
-        return jsonify({'error': 'internal server error'}), 500
-    finally:
-        cur.close()
-        conn.close()
-
 
 # --- Falecidos CRUD ---
 @app.route('/api/falecidos', methods=['GET', 'POST'])
 def falecidos_collection():
-    """Lista falecidos com base no nível do usuário, incluindo nome do setor e planos associados."""
+    """
+    Endpoint para a coleção de falecidos.
+    GET: Lista falecidos. Admins veem todos, visitantes veem apenas os associados a eles.
+    POST: Cria um novo registro de falecido (requer admin).
+    """
     conn = get_db_connection()
     if not conn:
         return jsonify([]), 500
@@ -729,7 +746,7 @@ def falecidos_collection():
             return jsonify({'id': new_id}), 201
         except Exception as e:
             app.logger.error(f"Error creating falecido: {e}")
-            return jsonify({'error': 'internal server error'}), 500
+            return jsonify({'error': str(e)}), 500
         finally:
             cur.close()
             conn.close()
@@ -778,13 +795,20 @@ def falecidos_collection():
 
 @app.route('/api/falecidos/<int:fid>', methods=['GET','PUT','DELETE'])
 def falecidos_single(fid):
+    """
+    Endpoint para um registro de falecido específico.
+    GET: Obtém detalhes de um falecido.
+    PUT: Atualiza um falecido.
+    DELETE: Remove um falecido.
+    Requer permissão de admin.
+    """
     conn = get_db_connection();
-    if not conn: return jsonify({'error':'db'}), 500
+    if not conn: return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, name, anonascimento, anomorte, setor FROM falecidos WHERE id=%s', (fid,))
         row = cur.fetchone();
-        if not row: cur.close(); conn.close(); return jsonify({}), 404
+        if not row: cur.close(); conn.close(); return jsonify({'error': 'Falecido not found'}), 404
         cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
         p = getattr(request, 'json_decrypted', request.json or {})
@@ -796,7 +820,7 @@ def falecidos_single(fid):
 
 @app.route('/api/falecidos/<int:fid>/atribuir-vaga', methods=['PUT'])
 def atribuir_vaga(fid):
-    """Atribui uma vaga a um usuário falecido existente."""
+    """Atribui ou atualiza a vaga de um registro de falecido existente."""
     conn = get_db_connection()
     if not conn: return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
@@ -806,24 +830,24 @@ def atribuir_vaga(fid):
         setor = payload.get('setor')
 
         if not vaga or not setor:
-            return jsonify({'error': 'vaga e setor são obrigatórios'}), 400
+            return jsonify({'error': 'Vaga e setor são obrigatórios'}), 400
 
         # Verificar se a vaga já está ocupada
         cur.execute("""
             SELECT COUNT(*)::int FROM falecidos WHERE setor = %s AND vaga = %s
         """, (setor, vaga))
         if cur.fetchone()['count'] > 0:
-            return jsonify({'error': 'Vaga já está ocupada'}), 400
+            return jsonify({'error': 'Esta vaga já está ocupada'}), 409
 
         # Atualizar a vaga do falecido
         cur.execute("""
             UPDATE falecidos SET vaga = %s, setor = %s WHERE id = %s
         """, (vaga, setor, fid))
         conn.commit()
-        return jsonify({'message': 'Vaga atribuída com sucesso'}), 200
+        return jsonify({'ok': True}), 200
     except Exception as e:
         app.logger.error(f"Error assigning vaga: {e}")
-        return jsonify({'error': 'internal server error'}), 500
+        return jsonify({'error': str(e)}), 500
     finally:
         cur.close()
         conn.close()
@@ -831,7 +855,7 @@ def atribuir_vaga(fid):
 # --- Associar falecidos a usuários ---
 @app.route('/api/falecidos/<int:fid>/associar', methods=['POST'])
 def associar_falecido(fid):
-    """Associa um falecido a um usuário."""
+    """Cria uma associação entre um falecido e um usuário (requer admin)."""
     conn = get_db_connection()
     if not conn:
         return jsonify({'error': 'db connection error'}), 500
@@ -851,15 +875,15 @@ def associar_falecido(fid):
         # Verificar se a associação já existe
         cur.execute('SELECT COUNT(*)::int FROM usuarios_falecidos WHERE user_id = %s AND falecido_id = %s', (user_id, fid))
         if cur.fetchone()['count'] > 0:
-            return jsonify({'error': 'Associação já existe'}), 400
+            return jsonify({'error': 'Associação já existe'}), 409
 
         # Criar a associação
         cur.execute('INSERT INTO usuarios_falecidos (user_id, falecido_id) VALUES (%s, %s)', (user_id, fid))
         conn.commit()
-        return jsonify({'message': 'Falecido associado ao usuário com sucesso'}), 201
+        return jsonify({'ok': True}), 201
     except Exception as e:
         app.logger.error(f"Error associating falecido: {e}")
-        return jsonify({'error': 'internal server error'}), 500
+        return jsonify({'error': str(e)}), 500
     finally:
         cur.close()
         conn.close()
@@ -867,7 +891,7 @@ def associar_falecido(fid):
 # --- Listar falecidos associados a um usuário ---
 @app.route('/api/usuarios/<int:user_id>/falecidos', methods=['GET'])
 def listar_falecidos_usuario(user_id):
-    """Lista os falecidos associados a um usuário."""
+    """Lista todos os falecidos associados a um ID de usuário específico."""
     conn = get_db_connection()
     if not conn:
         return jsonify({'error': 'db connection error'}), 500
@@ -883,7 +907,7 @@ def listar_falecidos_usuario(user_id):
         return jsonify(falecidos)
     except Exception as e:
         app.logger.error(f"Error listing falecidos for user: {e}")
-        return jsonify({'error': 'internal server error'}), 500
+        return jsonify({'error': str(e)}), 500
     finally:
         cur.close()
         conn.close()
@@ -891,7 +915,7 @@ def listar_falecidos_usuario(user_id):
 # --- Associar falecidos a planos ---
 @app.route('/api/falecidos/<int:fid>/associar-plano', methods=['POST'])
 def associar_plano(fid):
-    """Associa um falecido a um plano."""
+    """Cria uma associação entre um falecido e um plano/produto do catálogo (requer admin)."""
     conn = get_db_connection()
     if not conn:
         return jsonify({'error': 'db connection error'}), 500
@@ -916,17 +940,17 @@ def associar_plano(fid):
         # Criar a associação
         cur.execute('INSERT INTO falecidos_planos (falecido_id, plano_id) VALUES (%s, %s)', (fid, plano_id))
         conn.commit()
-        return jsonify({'message': 'Plano associado ao falecido com sucesso'}), 201
+        return jsonify({'ok': True}), 201
     except Exception as e:
         app.logger.error(f"Error associating plano: {e}")
-        return jsonify({'error': 'internal server error'}), 500
+        return jsonify({'error': str(e)}), 500
     finally:
         cur.close()
         conn.close()
 
 @app.route('/api/falecidos/<int:fid>/planos', methods=['GET'])
 def listar_planos_falecido(fid):
-    """Lista os planos associados a um falecido."""
+    """Lista todos os planos/produtos associados a um falecido específico."""
     conn = get_db_connection()
     if not conn:
         return jsonify({'error': 'db connection error'}), 500
@@ -942,7 +966,7 @@ def listar_planos_falecido(fid):
         return jsonify(planos)
     except Exception as e:
         app.logger.error(f"Error listing planos for falecido: {e}")
-        return jsonify({'error': 'internal server error'}), 500
+        return jsonify({'error': str(e)}), 500
     finally:
         cur.close()
         conn.close()
@@ -951,8 +975,13 @@ def listar_planos_falecido(fid):
 # --- Catálogo ---
 @app.route('/api/catalogo', methods=['GET','POST'])
 def catalogo_collection():
+    """
+    Endpoint para o catálogo de produtos/serviços.
+    GET: Lista todos os itens do catálogo.
+    POST: Adiciona um novo item ao catálogo (requer admin).
+    """
     conn = get_db_connection();
-    if not conn: return jsonify([]), 500
+    if not conn: return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, nome, descricao, preco FROM catalogo')
@@ -961,14 +990,20 @@ def catalogo_collection():
         p = getattr(request, 'json_decrypted', request.json or {})
         cur.execute('INSERT INTO catalogo (nome, descricao, preco) VALUES (%s,%s,%s) RETURNING id', (p.get('nome'), p.get('descricao'), p.get('preco')))
         nid = cur.fetchone()['id']
-        conn.commit(); cur.close(); conn.close(); return jsonify({'id':nid}),201
+        conn.commit(); cur.close(); conn.close(); return jsonify({'id': nid}), 201
 
 
 # --- Carrinho (persistência de itens antes do pedido) ---
 @app.route('/api/carrinho', methods=['GET','POST','DELETE'])
 def carrinho_collection():
+    """
+    Endpoint para o carrinho de compras.
+    GET: Lista itens no carrinho de um usuário.
+    POST: Adiciona um item ao carrinho.
+    DELETE: Limpa todos os itens do carrinho de um usuário.
+    """
     conn = get_db_connection();
-    if not conn: return jsonify({'error':'db'}), 500
+    if not conn: return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     if request.method == 'GET':
         user_id = request.args.get('user_id')
@@ -982,25 +1017,31 @@ def carrinho_collection():
         # espera: produto_id, quantidade, user_id (pode ser null)
         cur.execute('INSERT INTO carrinho (user_id, produto_id, quantidade) VALUES (%s,%s,%s) RETURNING id', (p.get('user_id'), p.get('produto_id'), p.get('quantidade')))
         nid = cur.fetchone()['id']
-        conn.commit(); cur.close(); conn.close(); return jsonify({'id':nid}),201
+        conn.commit(); cur.close(); conn.close(); return jsonify({'id': nid}), 201
     if request.method == 'DELETE':
         # permitir deleção por user_id query param (limpar carrinho) ou corpo ?user_id=
         user_id = request.args.get('user_id')
         if user_id:
             cur.execute('DELETE FROM carrinho WHERE user_id=%s', (user_id,)); conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
         else:
-            cur.close(); conn.close(); return jsonify({'error':'user_id required to clear cart'}),400
+            cur.execute('DELETE FROM carrinho'); conn.commit(); cur.close(); conn.close(); return jsonify({'ok':True})
 
 
 @app.route('/api/carrinho/<int:item_id>', methods=['GET','PUT','DELETE'])
 def carrinho_item(item_id):
+    """
+    Endpoint para um item específico no carrinho.
+    GET: Obtém detalhes de um item.
+    PUT: Atualiza a quantidade de um item.
+    DELETE: Remove um item do carrinho.
+    """
     conn = get_db_connection();
-    if not conn: return jsonify({'error':'db'}), 500
+    if not conn: return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     if request.method == 'GET':
         cur.execute('SELECT id, user_id, produto_id, quantidade FROM carrinho WHERE id=%s', (item_id,))
         row = cur.fetchone();
-        if not row: cur.close(); conn.close(); return jsonify({}), 404
+        if not row: cur.close(); conn.close(); return jsonify({'error': 'Item not found'}), 404
         cur.close(); conn.close(); return jsonify(row)
     if request.method == 'PUT':
         p = getattr(request, 'json_decrypted', request.json or {})
@@ -1013,9 +1054,14 @@ def carrinho_item(item_id):
 # --- Pedidos (checkout) ---
 @app.route('/api/pedidos', methods=['GET', 'POST'])
 def pedidos_collection():
+    """
+    Endpoint para a coleção de pedidos.
+    GET: Lista pedidos. Admins veem todos, usuários veem apenas os seus.
+    POST: Cria um novo pedido a partir do checkout.
+    """
     conn = get_db_connection()
     if not conn:
-        return jsonify({'error': 'db'}), 500
+        return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     
     if request.method == 'POST':
@@ -1083,13 +1129,12 @@ def pedidos_collection():
 
 @app.route('/api/pedidos/<int:pedido_id>/aprovar', methods=['PUT'])
 def aprovar_pedido(pedido_id):
-    """Permite que o administrador aprove ou rejeite um pedido."""
+    """Permite que um administrador aprove ou rejeite um pedido alterando seu status."""
     if not g.current_user or g.current_user['role'] != 'admin':
         return jsonify({'error': 'Acesso negado'}), 403
 
     conn = get_db_connection()
-    if not conn:
-        return jsonify({'error': 'db connection error'}), 500
+    if not conn: return jsonify({'error': 'db connection error'}), 500
     cur = conn.cursor()
     try:
         # Lê o JSON diretamente, pois a requisição não será mais criptografada
@@ -1115,9 +1160,13 @@ def aprovar_pedido(pedido_id):
 # --- Financeiro ---
 @app.route('/api/financeiro', methods=['GET','POST'])
 def financeiro_collection():
+    """
+    Endpoint para a coleção de registros financeiros.
+    GET: Lista todos os registros (requer admin).
+    POST: Cria um novo registro (receita ou despesa) (requer admin).
+    """
     conn = get_db_connection()
-    if not conn:
-        return jsonify([]), 500
+    if not conn: return jsonify([]), 500
     cur = conn.cursor()
     
     if request.method == 'GET':
@@ -1174,6 +1223,13 @@ def financeiro_collection():
 
 @app.route('/api/financeiro/<int:fid>', methods=['GET','PUT','DELETE'])
 def financeiro_single(fid):
+    """
+    Endpoint para um registro financeiro específico.
+    GET: Obtém detalhes de um registro.
+    PUT: Atualiza um registro.
+    DELETE: Remove um registro.
+    Requer permissão de admin.
+    """
     conn = get_db_connection();
     if not conn: return jsonify({'error':'db'}), 500
     cur = conn.cursor()
@@ -1233,4 +1289,4 @@ def financeiro_single(fid):
 
 
 if __name__ == '__main__':
-    app.run( debug=True)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)

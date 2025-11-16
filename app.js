@@ -148,6 +148,11 @@ function authHeaders(){ return token ? { 'Authorization': 'Bearer ' + token } : 
 let isRefreshing = false;
 let failedQueue = [];
 
+/**
+ * Processa uma fila de requisições que falharam devido a um token expirado.
+ * @param {Error|null} error - Um erro, se a renovação do token falhou.
+ * @param {string|null} token - O novo token de acesso.
+ */
 const processQueue = (error, token = null) => {
     failedQueue.forEach(prom => {
         if (error) {
@@ -159,6 +164,13 @@ const processQueue = (error, token = null) => {
     failedQueue = [];
 };
 
+/**
+ * Função central para fazer requisições à API.
+ * Lida com autenticação, criptografia, e renovação de token (refresh token).
+ * @param {string} path - O caminho do endpoint da API (ex: 'usuarios').
+ * @param {object} opts - Opções para a função fetch (method, body, headers, etc).
+ * @returns {Promise<any>} - A resposta da API em formato JSON.
+ */
 async function api(path, opts = {}){
     opts.headers = Object.assign({'Content-Type':'application/json'}, authHeaders(), opts.headers || {});
     
@@ -245,7 +257,10 @@ async function api(path, opts = {}){
     return j;
 }
 
-// Função para deslogar o usuário e limpar o estado
+/**
+ * Desloga o usuário, limpando tokens e estado local.
+ * Tenta invalidar o token no backend.
+ */
 function logoutUser() {
     api('logout', { method: 'POST', skipEncryption: true }).catch(err => console.error("Logout API call failed:", err)); // Tenta invalidar o token no backend
     token = null;
@@ -256,88 +271,145 @@ function logoutUser() {
     render();
 }
 
-// Função para verificar se o usuário está logado
+/**
+ * Verifica se há um usuário logado.
+ * @returns {boolean} - True se o usuário estiver logado.
+ */
 function isUserLoggedIn() {
     return currentUser !== null;
 }
 
-// Função para verificar se o usuário é administrador
+/**
+ * Verifica se o usuário logado é um administrador.
+ * @returns {boolean} - True se o usuário for admin.
+ */
 function isAdmin() {
     return currentUser && currentUser.role === 'admin';
 }
 
 // API helpers (Original)
+/** Faz o login do usuário. */
 const login = (username, password) => api('login', { method: 'POST', body: JSON.stringify({ username, password }), skipEncryption: true });
+/** Solicita um token de recuperação de senha. */
 const forgotPassword = (email, username) => api('forgot-password', { method: 'POST', body: JSON.stringify({ email, username }), skipEncryption: true });
+/** Reseta a senha usando um token. */
 const resetPassword = (token, password) => api(`reset-password/${token}`, { method: 'POST', body: JSON.stringify({ password }), skipEncryption: true });
+/** Busca o catálogo de produtos. */
 const getCatalog = () => api('catalogo');
+/**
+ * Busca os itens do carrinho de um usuário.
+ * @param {number|null} userId - O ID do usuário.
+ */
 const getCart = (userId = null) => {
     const url = new URL(API_BASE + '/carrinho');
     if(userId) url.searchParams.append('user_id', userId);
     return fetch(url.toString(), { headers: authHeaders() }).then(r => r.ok ? r.json() : Promise.reject(new Error('Erro ao buscar carrinho')));
 };
+/** Adiciona um item ao carrinho. */
 const addCartItem = (produto_id, quantidade=1, user_id=null) => api('carrinho', { method: 'POST', body: JSON.stringify({ produto_id, quantidade, user_id }) });
+/** Atualiza a quantidade de um item no carrinho. */
 const updateCartItem = (id, quantidade) => api('carrinho/' + id, { method: 'PUT', body: JSON.stringify({ quantidade }) });
+/** Remove um item do carrinho. */
 const removeCartItem = (id) => fetch(API_BASE + '/carrinho/' + id, { method: 'DELETE', headers: authHeaders() }).then(r => r.ok ? r.json() : Promise.reject(new Error('Erro ao remover item')));
+/** Limpa o carrinho de um usuário. */
 const clearCart = (userId=null) => fetch(API_BASE + '/carrinho?user_id=' + encodeURIComponent(userId || ''), { method: 'DELETE', headers: authHeaders() }).then(r => r.ok ? r.json() : Promise.reject(new Error('Erro ao limpar carrinho')));
+/** Cria um novo pedido. */
 const createOrder = (payload) => api('pedidos', { method: 'POST', body: JSON.stringify(payload) });
 
 // API helpers (Gerenciamento)
+/** Busca a lista de usuários. */
 const getUsers = () => api('usuarios');
+/** Busca a lista de setores. */
 const getSetores = () => api('setores');
+/** Busca a lista de falecidos. */
 const getFalecidos = () => api('falecidos');
+/** Busca a lista de pedidos. */
 const getOrders = () => api('pedidos');
+/** Busca a lista de registros financeiros. */
 const getFinanceiro = () => api('financeiro');
 
 // NOVAS API helpers (CREATE)
+/** Cria um novo usuário. */
 const createUser = (payload) => api('usuarios', { method: 'POST', body: JSON.stringify(payload) });
+/** Cria um novo setor. */
 const createSetor = (payload) => api('setores', { method: 'POST', body: JSON.stringify(payload) });
+/** Cria um novo registro de falecido. */
 const createFalecido = (payload) => api('falecidos', { method: 'POST', body: JSON.stringify(payload) });
+/** Cria um novo registro financeiro. */
 const createFinanceiro = (payload) => api('financeiro', { method: 'POST', body: JSON.stringify(payload) });
 // --- FIM NOVAS API helpers (CREATE) ---
 
 // NOVA API helper
+/** Busca a lista de vagas por setor. */
 const getSetorVagas = () => api('setores/vagas');
 
 // NOVA API helper
+/** Atribui uma vaga a um falecido. */
 const assignVaga = (falecidoId, payload) => api(`falecidos/${falecidoId}/atribuir-vaga`, { method: 'PUT', body: JSON.stringify(payload) });
 
-// Adicione a função para excluir um falecido
+/**
+ * Exclui um registro de falecido.
+ * @param {number} falecidoId - O ID do falecido a ser excluído.
+ */
 async function deleteFalecido(falecidoId) {
     return api(`falecidos/${falecidoId}`, { method: 'DELETE' });
 }
 
-// Função para obter um único usuário
+/**
+ * Busca os dados de um único usuário.
+ * @param {number} userId - O ID do usuário.
+ */
 async function getUser(userId) {
     return api(`usuarios/${userId}`);
 }
 
-// Função para obter um único setor
+/**
+ * Busca os dados de um único setor.
+ * @param {number} setorId - O ID do setor.
+ */
 async function getSetor(setorId) {
     return api(`setores/${setorId}`);
 }
 
-// Função para atualizar um usuário
+/**
+ * Atualiza os dados de um usuário.
+ * @param {number} userId - O ID do usuário a ser atualizado.
+ * @param {object} payload - Os novos dados do usuário.
+ */
 async function updateUser(userId, payload) {
     return api(`usuarios/${userId}`, { method: 'PUT', body: JSON.stringify(payload) });
 }
 
-// Função para atualizar um setor
+/**
+ * Atualiza os dados de um setor.
+ * @param {number} setorId - O ID do setor a ser atualizado.
+ * @param {object} payload - Os novos dados do setor.
+ */
 async function updateSetor(setorId, payload) {
     return api(`setores/${setorId}`, { method: 'PUT', body: JSON.stringify(payload) });
 }
 
-// Função para excluir um usuário
+/**
+ * Exclui um usuário.
+ * @param {number} userId - O ID do usuário a ser excluído.
+ */
 async function deleteUser(userId) {
     return api(`usuarios/${userId}`, { method: 'DELETE' });
 }
 
-// Função para excluir um setor
+/**
+ * Exclui um setor.
+ * @param {number} setorId - O ID do setor a ser excluído.
+ */
 async function deleteSetor(setorId) {
     return api(`setores/${setorId}`, { method: 'DELETE' });
 }
 
-// Função para associar um falecido a um usuário
+/**
+ * Associa um falecido a um usuário.
+ * @param {number} falecidoId - O ID do falecido.
+ * @param {number} userId - O ID do usuário.
+ */
 async function associateFalecidoToUser(falecidoId, userId) {
     return api(`falecidos/${falecidoId}/associar`, {
         method: 'POST',
@@ -345,17 +417,26 @@ async function associateFalecidoToUser(falecidoId, userId) {
     });
 }
 
-// Função para obter os falecidos associados a um usuário
+/**
+ * Busca os falecidos associados a um usuário.
+ * @param {number} userId - O ID do usuário.
+ */
 async function getFalecidosByUser(userId) {
     return api(`usuarios/${userId}/falecidos`);
 }
 
-// Função para obter pedidos
+/**
+ * Busca a lista de pedidos.
+ */
 async function getPedidos() {
     return api('pedidos');
 }
 
-// Função para aprovar ou rejeitar um pedido
+/**
+ * Atualiza o status de um pedido (Aprovado/Rejeitado).
+ * @param {number} pedidoId - O ID do pedido.
+ * @param {string} status - O novo status ('Aprovado' ou 'Rejeitado').
+ */
 async function updatePedidoStatus(pedidoId, status) {
     return api(`pedidos/${pedidoId}/aprovar`, {
         method: 'PUT',
@@ -365,6 +446,7 @@ async function updatePedidoStatus(pedidoId, status) {
 }
 
 // DOM helpers
+/** Atalho para document.getElementById. */
 const el = id => document.getElementById(id);
 
 // ------------------------------------
@@ -372,6 +454,7 @@ const el = id => document.getElementById(id);
 // ------------------------------------
 
 // Views (Originals)
+/** Renderiza o formulário de login. */
 function renderLogin(){
     return `
         <div class="card">
@@ -388,6 +471,7 @@ function renderLogin(){
         </div>`;
 }
 
+/** Renderiza a página do catálogo de produtos. */
 function renderCatalog(){
     return `
         <div class="card">
@@ -397,6 +481,7 @@ function renderCatalog(){
         </div>`;
 }
 
+/** Renderiza a página do carrinho de compras. */
 function renderCart(){
     return `
         <div class="card">
@@ -406,6 +491,7 @@ function renderCart(){
         </div>`;
 }
 
+/** Renderiza o formulário de checkout. */
 function renderCheckout(){
     return `
         <div class="card">
@@ -424,6 +510,7 @@ function renderCheckout(){
         </div>`;
 }
 
+/** Renderiza a página de sucesso após a criação de um pedido. */
 function renderSuccess(){
     return `
         <div class="card">
@@ -433,6 +520,7 @@ function renderSuccess(){
         </div>`;
 }
 
+/** Renderiza a página de acesso negado. */
 function renderAccessDenied(){
      return `
         <div class="card" style="border-left: 5px solid red;">
@@ -443,6 +531,7 @@ function renderAccessDenied(){
 }
 
 // Views (Gerenciamento)
+/** Renderiza a página de gerenciamento de usuários. */
 function renderUsers(){
     return `
         <div class="card">
@@ -454,6 +543,7 @@ function renderUsers(){
         </div>`;
 }
 
+/** Renderiza a página de gerenciamento de setores. */
 function renderSetores(){
     return `
         <div class="card">
@@ -465,6 +555,7 @@ function renderSetores(){
         </div>`;
 }
 
+/** Renderiza a página de gerenciamento de falecidos. */
 function renderFalecidos(){
     return `
         <div class="card">
@@ -480,6 +571,7 @@ function renderFalecidos(){
         </div>`;
 }
 
+/** Renderiza a página de visualização de pedidos. */
 function renderOrders(){
     return `
         <div class="card">
@@ -488,6 +580,7 @@ function renderOrders(){
         </div>`;
 }
 
+/** Renderiza a página de gerenciamento financeiro. */
 function renderFinanceiro() {
     return `
         <div class="card">
@@ -500,6 +593,7 @@ function renderFinanceiro() {
 }
 
 // NOVAS VIEWS (FORMULÁRIOS DE CRIAÇÃO)
+/** Renderiza o formulário de criação de usuário ou registro de conta. */
 function renderNewUser(){
     const isAdmin = currentUser && currentUser.role === 'admin';
     return `
@@ -535,6 +629,7 @@ function renderNewUser(){
         </div>`;
 }
 
+/** Renderiza o formulário de criação de setor. */
 function renderNewSetor(){
     return `
         <div class="card">
@@ -550,6 +645,7 @@ function renderNewSetor(){
         </div>`;
 }
 
+/** Renderiza o formulário de adição de falecido. */
 function renderNewFalecido(){
     return `
         <div class="card">
@@ -568,6 +664,7 @@ function renderNewFalecido(){
         </div>`;
 }
 
+/** Renderiza o formulário de criação de registro financeiro. */
 function renderNewFinanceiro(){
     return `
         <div class="card">
@@ -591,6 +688,7 @@ function renderNewFinanceiro(){
 }
 
 // NOVA VIEW
+/** Renderiza a página de visualização de vagas por setor. */
 function renderSetorVagas() {
     return `
         <div class="card">
@@ -601,6 +699,10 @@ function renderSetorVagas() {
 }
 
 // NOVA VIEW
+/**
+ * Renderiza o formulário para atribuir uma vaga a um falecido.
+ * @param {number} falecidoId - O ID do falecido.
+ */
 function renderAssignVaga(falecidoId) {
     return `
         <div class="card">
@@ -616,7 +718,7 @@ function renderAssignVaga(falecidoId) {
         </div>`;
 }
 
-// Nova função para renderizar a tela inicial (home)
+/** Renderiza a página inicial (home). */
 function renderHome() {
     return `
         <div class="card home-card">
@@ -635,7 +737,7 @@ function renderHome() {
     `;
 }
 
-// Função para renderizar a lista de pedidos
+/** Renderiza a página de listagem de pedidos. */
 function renderPedidos() {
     return `
         <div class="card">
@@ -645,6 +747,7 @@ function renderPedidos() {
 }
 
 // --- NOVAS VIEWS PARA PERFIL DE USUÁRIO ---
+/** Renderiza a página de perfil do usuário logado. */
 function renderProfile() {
     if (!currentUser) return renderAccessDenied();
     return `
@@ -664,6 +767,7 @@ function renderProfile() {
     `;
 }
 
+/** Renderiza o formulário de edição de perfil do usuário. */
 function renderEditProfile() {
     if (!currentUser) return renderAccessDenied();
     return `
@@ -684,6 +788,7 @@ function renderEditProfile() {
 }
 
 // --- NOVAS VIEWS PARA RECUPERAÇÃO DE SENHA ---
+/** Renderiza o formulário para solicitar a recuperação de senha. */
 function renderForgotPassword() {
     return `
         <div class="card">
@@ -706,6 +811,10 @@ function renderForgotPassword() {
         </div>`;
 }
 
+/**
+ * Renderiza o formulário para redefinir a senha.
+ * @param {string} token - O token de recuperação.
+ */
 function renderResetPassword(token) {
     return `
         <div class="card">
@@ -731,6 +840,10 @@ function renderResetPassword(token) {
 // ------------------------------------
 
 // Binds (Originais)
+/**
+ * Associa a lógica ao formulário de login.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindLogin(container){
     const btn = el('doLogin');
     if(!btn) return;
@@ -763,6 +876,10 @@ async function bindLogin(container){
 }
 
 // --- NOVOS BINDS PARA RECUPERAÇÃO DE SENHA ---
+/**
+ * Associa a lógica ao formulário de "esqueci minha senha".
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindForgotPassword(container) {
     const form = el('forgotPasswordForm');
     if (!form) return;
@@ -781,6 +898,11 @@ async function bindForgotPassword(container) {
     };
 }
 
+/**
+ * Associa a lógica ao formulário de redefinição de senha.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ * @param {string} token - O token de recuperação.
+ */
 async function bindResetPassword(container, token) {
     const form = el('resetPasswordForm');
     if (!form) return;
@@ -805,6 +927,10 @@ async function bindResetPassword(container, token) {
     };
 }
 
+/**
+ * Carrega e exibe os produtos do catálogo.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindCatalog(container){
     const grid = container.querySelector('#catalogGrid');
     if(!grid) return;
@@ -830,6 +956,10 @@ async function bindCatalog(container){
     const goCart = container.querySelector('#goCart'); if(goCart) goCart.onclick = ()=>{ location.hash = '#cart'; render(); };
 }
 
+/**
+ * Carrega e exibe os itens do carrinho de compras.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindCart(container){
     const body = container.querySelector('#cartBody');
     try{
@@ -854,6 +984,10 @@ async function bindCart(container){
 }
 
 // --- NOVOS BINDS PARA PERFIL ---
+/**
+ * Associa a lógica aos botões da página de perfil (editar, excluir).
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindProfile(container) {
     if (!currentUser) return;
 
@@ -882,6 +1016,10 @@ async function bindProfile(container) {
     }
 }
 
+/**
+ * Associa a lógica ao formulário de edição de perfil.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindEditProfile(container) {
     const form = container.querySelector('#editProfileForm');
     if (!form) return;
@@ -910,6 +1048,10 @@ async function bindEditProfile(container) {
 }
 
 // Binds (Gerenciamento)
+/**
+ * Carrega e exibe a lista de usuários, associando eventos aos botões.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindUsers(container){
     const list = container.querySelector('#usersList');
     if(!list) return;
@@ -966,6 +1108,10 @@ async function bindUsers(container){
     }
 }
 
+/**
+ * Carrega e exibe a lista de setores, associando eventos aos botões.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindSetores(container){
     const list = container.querySelector('#setoresList');
     if(!list) return;
@@ -1014,6 +1160,10 @@ async function bindSetores(container){
     }
 }
 
+/**
+ * Carrega e exibe a lista de falecidos, associando eventos aos botões.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindFalecidos(container) {
     const list = container.querySelector('#falecidosList');
     if (!list) return;
@@ -1097,6 +1247,10 @@ async function bindFalecidos(container) {
     }
 }
 
+/**
+ * Carrega e exibe a lista de pedidos, associando eventos aos botões de admin.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindPedidos(container) {
     const list = container.querySelector('#pedidosList');
     if (!list) return;
@@ -1172,7 +1326,10 @@ async function bindPedidos(container) {
     }
 }
 
-// Nova função para renderizar o formulário de edição de falecidos
+/**
+ * Renderiza e associa a lógica ao formulário de edição de um falecido (atribuir vaga).
+ * @param {number} falecidoId - O ID do falecido a ser editado.
+ */
 function renderEditFalecido(falecidoId) {
     const app = document.getElementById('app');
     app.innerHTML = `
@@ -1208,6 +1365,10 @@ function renderEditFalecido(falecidoId) {
     };
 }
 
+/**
+ * Carrega e exibe a lista de registros financeiros, associando eventos aos botões.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindFinanceiro(container) {
     const list = container.querySelector('#financeiroList');
     if (!list) return;
@@ -1264,6 +1425,10 @@ async function bindFinanceiro(container) {
     }
 }
 
+/**
+ * Renderiza e associa a lógica ao formulário de edição de um registro financeiro.
+ * @param {object} financeiro - O objeto do registro financeiro a ser editado.
+ */
 function renderEditFinanceiro(financeiro) {
     const app = document.getElementById('app');
     app.innerHTML = `
@@ -1314,11 +1479,19 @@ function renderEditFinanceiro(financeiro) {
     };
 }
 
-// Funções auxiliares para financeiro
+/**
+ * Busca um registro financeiro pelo ID.
+ * @param {number} id - O ID do registro.
+ */
 async function getFinanceiroById(id) {
     return api(`financeiro/${id}`);
 }
 
+/**
+ * Atualiza um registro financeiro.
+ * @param {number} id - O ID do registro.
+ * @param {object} payload - Os novos dados do registro.
+ */
 async function updateFinanceiro(id, payload) {
     return api(`financeiro/${id}`, { 
         method: 'PUT', 
@@ -1327,11 +1500,19 @@ async function updateFinanceiro(id, payload) {
     });
 }
 
+/**
+ * Exclui um registro financeiro.
+ * @param {number} id - O ID do registro.
+ */
 async function deleteFinanceiro(id) {
     return api(`financeiro/${id}`, { method: 'DELETE' });
 }
 
 // NOVOS BINDS (Lógica de Submissão de Formulário)
+/**
+ * Associa a lógica ao formulário de criação de novo usuário.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindNewUser(container){
     const form = container.querySelector('#newUserForm');
     if(!form) return;
@@ -1390,6 +1571,10 @@ async function bindNewUser(container){
     };
 }
 
+/**
+ * Associa a lógica ao formulário de criação de novo setor.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindNewSetor(container){
     const form = container.querySelector('#newSetorForm');
     if(!form) return;
@@ -1410,6 +1595,10 @@ async function bindNewSetor(container){
     };
 }
 
+/**
+ * Associa a lógica ao formulário de criação de novo falecido.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindNewFalecido(container) {
     const form = container.querySelector('#newFalecidoForm');
     if (!form) return;
@@ -1451,6 +1640,10 @@ async function bindNewFalecido(container) {
     };
 }
 
+/**
+ * Associa a lógica ao formulário de criação de novo registro financeiro.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindNewFinanceiro(container){
     const form = container.querySelector('#newFinanceiroForm');
     if(!form) return;
@@ -1474,6 +1667,10 @@ async function bindNewFinanceiro(container){
 }
 
 // NOVO BIND
+/**
+ * Carrega os botões de setores e associa eventos para mostrar as vagas.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindSetorVagas(container) {
     const setoresButtons = container.querySelector('#setoresButtons');
     const vagasList = container.querySelector('#setorVagasList');
@@ -1499,7 +1696,11 @@ async function bindSetorVagas(container) {
     }
 }
 
-// Função para carregar vagas de um setor específico
+/**
+ * Carrega e exibe as vagas para um setor específico.
+ * @param {number} setorId - O ID do setor.
+ * @param {HTMLElement} vagasList - O elemento onde a lista de vagas será renderizada.
+ */
 async function loadVagasForSetor(setorId, vagasList) {
     try {
         const setores = await getSetorVagas(); // Obtenha as vagas de todos os setores
@@ -1533,6 +1734,11 @@ async function loadVagasForSetor(setorId, vagasList) {
 }
 
 // NOVO BIND
+/**
+ * Associa a lógica ao formulário de atribuição de vaga.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ * @param {number} falecidoId - O ID do falecido.
+ */
 async function bindAssignVaga(container, falecidoId) {
     const form = container.querySelector('#assignVagaForm');
     if (!form) return;
@@ -1553,7 +1759,10 @@ async function bindAssignVaga(container, falecidoId) {
     };
 }
 
-// Função para renderizar o formulário de edição de usuários
+/**
+ * Renderiza e associa a lógica ao formulário de edição de um usuário.
+ * @param {object} user - O objeto do usuário a ser editado.
+ */
 function renderEditUser(user) {
     const app = document.getElementById('app');
     app.innerHTML = `
@@ -1599,7 +1808,10 @@ function renderEditUser(user) {
     };
 }
 
-// Função para renderizar o formulário de edição de setores
+/**
+ * Renderiza e associa a lógica ao formulário de edição de um setor.
+ * @param {object} setor - O objeto do setor a ser editado.
+ */
 function renderEditSetor(setor) {
     const app = document.getElementById('app');
     app.innerHTML = `
@@ -1635,6 +1847,9 @@ function renderEditSetor(setor) {
 }
 
 // --- NOVA FUNÇÃO PARA RENDERIZAR A NAVEGAÇÃO ---
+/**
+ * Renderiza os menus de navegação com base no status de login e no nível do usuário.
+ */
 function renderNavigation() {
     const nav = document.getElementById('mainNav');
     if (!nav) return;
@@ -1684,7 +1899,7 @@ function renderNavigation() {
 }
 
 
-// Header (User Controls)
+/** Renderiza o cabeçalho, incluindo os controles de usuário (login/logout, perfil). */
 function renderHeader(){
     const c = document.getElementById('userControls'); if(!c) return;
     c.innerHTML = '';
@@ -1708,7 +1923,10 @@ function renderHeader(){
     renderNavigation(); // Renderiza a navegação principal
 }
 
-// Router - ATUALIZADO com Novas Rotas de Criação (new-X)
+/**
+ * Roteador principal da aplicação.
+ * Lê o hash da URL, renderiza a view correspondente e associa a lógica (bind).
+ */
 function render(){
     const app = document.getElementById('app'); if(!app) return;
     renderHeader();
@@ -1793,6 +2011,9 @@ function render(){
 }
 
 // --- NOVA FUNÇÃO PARA BIND DOS MENUS ---
+/**
+ * Associa eventos de clique aos botões de navegação e dropdowns.
+ */
 function bindNavigation() {
     const nav = document.getElementById('mainNav');
     if (!nav) return;
@@ -1860,7 +2081,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     render();
 });
 
-// Função para associar um plano a um falecido
+/**
+ * Associa um plano/produto a um falecido.
+ * @param {number} falecidoId - O ID do falecido.
+ * @param {number} planoId - O ID do plano.
+ */
 async function associatePlanoToFalecido(falecidoId, planoId) {
     return api(`falecidos/${falecidoId}/associar-plano`, {
         method: 'POST',
@@ -1868,23 +2093,19 @@ async function associatePlanoToFalecido(falecidoId, planoId) {
     });
 }
 
-// Função para obter os planos associados a um falecido
+/**
+ * Busca os planos associados a um falecido.
+ * @param {number} falecidoId - O ID do falecido.
+ */
 async function getPlanosByFalecido(falecidoId) {
     return api(`falecidos/${falecidoId}/planos`);
 }
 
-/**
- * Função para aplicar hash e salt ao CPF antes de enviá-lo ao backend.
- * @param {string} cpf - O CPF a ser protegido.
- * @returns {string} - O CPF protegido com hash e salt.
- */
-function hashCPF(cpf) {
-    const salt = CryptoJS.lib.WordArray.random(16); // Gera um salt aleatório
-    const hash = CryptoJS.PBKDF2(cpf, salt, { keySize: 256 / 32, iterations: 1000 });
-    return `${salt.toString(CryptoJS.enc.Hex)}:${hash.toString(CryptoJS.enc.Hex)}`;
-}
-
 // --- NOVA FUNÇÃO BINDCHECKOUT ---
+/**
+ * Associa a lógica ao formulário de checkout.
+ * @param {HTMLElement} container - O elemento que contém a view.
+ */
 async function bindCheckout(container) {
     const form = container.querySelector('#checkoutForm');
     if (!form) return;
