@@ -898,7 +898,7 @@ async function bindForgotPassword(container) {
             const resetLink = `${location.origin}${location.pathname}#reset-password/${res.token}`;
             const templateParams = {
                 to_name: res.user_name,
-                to_email: res.user_email, // <-- ALTERADO: Usar o e-mail retornado pela API
+                to_email: res.user_email,
                 from_name: "Cemitério Online",
                 reset_link: resetLink,
                 message: `Olá, ${res.user_name}. Use o link a seguir para redefinir sua senha. Ele expira em 10 minutos.`
