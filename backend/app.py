@@ -267,7 +267,7 @@ def authenticate_user():
             return
         user_id = decoded.get('user_id')
         conn = get_db_connection()
-        if not conn:  # <-- ADICIONAR ESTA VERIFICAÇÃO
+        if not conn:
             g.current_user = None
             return
         cur = conn.cursor()

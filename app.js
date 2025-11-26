@@ -195,10 +195,12 @@ async function api(path, opts = {}){
 
     if (res.status === 401) {
         if (isRefreshing) {
+            // Se já existe uma renovação em andamento, aguarda o resultado dela
             return new Promise((resolve, reject) => {
                 failedQueue.push({ resolve, reject });
             })
             .then(newToken => {
+                // Tenta a requisição novamente com o novo token
                 opts.headers['Authorization'] = 'Bearer ' + newToken;
                 return originalRequest();
             })
@@ -219,7 +221,10 @@ async function api(path, opts = {}){
                 body: JSON.stringify({ refresh_token: refreshToken })
             });
 
-            if (!refreshRes.ok) throw new Error('Não foi possível renovar a sessão.');
+            if (!refreshRes.ok) {
+                // Se a renovação falhar, desloga o usuário
+                throw new Error('Não foi possível renovar a sessão.');
+            }
 
             const { access_token } = await refreshRes.json();
             token = access_token;
