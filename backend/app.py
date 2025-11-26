@@ -378,11 +378,29 @@ def forgot_password():
             subject="Recuperação de Senha - Cemitério Online",
             recipients=[user['email']],
             html_body=f"""
-                <p>Olá, {user['name']},</p>
-                <p>Você solicitou a redefinição de sua senha. Clique no link abaixo para continuar:</p>
-                <p><a href="{reset_link}">Redefinir minha senha</a></p>
-                <p>Se você não solicitou isso, por favor, ignore este e-mail.</p>
-                <p>O link expira em 15 minutos.</p>
+                <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+                    <div style="max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+                        <h2 style="color: #444; text-align: center;">Cemitério Online</h2>
+                        <hr style="border: 0; border-top: 1px solid #eee;">
+                        
+                        <p>Olá, {user['name']},</p>
+                        <p>Recebemos uma solicitação para redefinir a senha da sua conta no sistema <strong>Cemitério Online</strong>.</p>
+                        <p>Para criar uma nova senha, por favor, clique no botão abaixo:</p>
+                        
+                        <p style="text-align: center; margin: 30px 0;">
+                            <a href="{reset_link}" style="background-color: #007bff; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">Redefinir Minha Senha</a>
+                        </p>
+                        
+                        <p>Este link de redefinição de senha expirará em <strong>15 minutos</strong>.</p>
+                        <p>Se você não solicitou uma redefinição de senha, nenhuma ação é necessária e você pode ignorar este e-mail com segurança.</p>
+                        
+                        <hr style="border: 0; border-top: 1px solid #eee; margin-top: 20px;">
+                        <p style="font-size: 0.9em; color: #777; text-align: center;">
+                            Atenciosamente,<br>
+                            Equipe Cemitério Online
+                        </p>
+                    </div>
+                </div>
             """
         )
     
