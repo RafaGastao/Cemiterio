@@ -604,6 +604,10 @@ function renderNewUser(){
                 <div class="form-row"><label>Usuário (Login)</label><input id="uUser" class="input" required></div>
                 <div class="form-row"><label>Email</label><input id="uEmail" type="email" class="input"></div>
                 <div class="form-row"><label>Senha</label><input id="uPass" type="password" class="input" required></div>
+                <div class="form-row"><label>Confirmar Senha</label><input id="uPassConfirm" type="password" class="input" required></div>
+                <div class="form-row password-requirements">
+                    <small>A senha deve ter no mínimo 8 caracteres, incluindo um número e um caractere especial (ex: !@#$).</small>
+                </div>
                 ${isAdmin ? `
                 <div class="form-row"><label>Nível (Role)</label>
                     <select id="uRole" class="input">
@@ -1533,9 +1537,23 @@ async function bindNewUser(container){
 
         const username = el('uUser').value;
         const password = el('uPass').value;
+        const confirmPassword = el('uPassConfirm').value;
         const email = el('uEmail').value;
 
         // --- VALIDAÇÕES ADICIONAIS ---
+        // Validação de confirmação de senha
+        if (password !== confirmPassword) {
+            alert('As senhas não coincidem.');
+            return;
+        }
+
+        // Validação de força da senha
+        const passRegex = /^(?=.*[0-9])(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
+        if (!passRegex.test(password)) {
+            alert('A senha não atende aos requisitos de segurança: deve ter no mínimo 8 caracteres, um número e um caractere especial.');
+            return;
+        }
+
         if (username.includes(' ')) {
             alert('O nome de usuário não pode conter espaços.');
             return;

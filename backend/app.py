@@ -100,7 +100,6 @@ def encrypt_response_payload(data, user_id):
             raise ValueError("Client public key not found for user.")
 
         client_public_key = RSA.import_key(client_pub_key_str)
-        
         # Gera uma chave de sessão AES
         session_key = os.urandom(32) # Chave de 256 bits (32 bytes)
         iv = os.urandom(16) # IV de 16 bytes para CBC
@@ -115,7 +114,6 @@ def encrypt_response_payload(data, user_id):
         data_bytes = json.dumps(data, default=str).encode('utf-8')
         padded_data = pad(data_bytes, AES.block_size)
         ciphertext = cipher_aes.encrypt(padded_data)
-
         # Codifica tudo em Base64 para transporte
         return {
             'encrypted_key': base64.b64encode(encrypted_key).decode('utf-8'),
@@ -199,13 +197,11 @@ def before_request_handler():
     """
     # 1. Autenticação
     authenticate_user()
-    
     # 2. Decriptografia do Payload
     # Ignora endpoints que não devem ser criptografados
     exempt_paths = ['/api/login', '/api/security/public-key', '/api/forgot-password', '/api/token/refresh']
     if request.path in exempt_paths or request.path.startswith('/api/reset-password'):
         return
-
     if request.method in ['POST', 'PUT'] and request.is_json:
         encrypted_payload = request.get_json(silent=True)
         if (encrypted_payload and 'encrypted_key' in encrypted_payload):
@@ -218,8 +214,6 @@ def before_request_handler():
         else:
             # Se a criptografia é esperada mas não veio, pode ser um erro ou ataque
             app.logger.warning(f"Unencrypted payload received for protected route {request.path}")
-
-
 # Middleware para autenticação e obtenção do usuário atual
 # @app.before_request # Esta função foi movida para 'before_request_handler'
 def authenticate_user():
@@ -232,20 +226,17 @@ def authenticate_user():
         g.current_user = None
         return
     try:
-        decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-        
+        decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])     
         # Verifica se o token está na blacklist
         jti = decoded.get('jti')
         if not jti or is_token_revoked(jti):
             g.current_user = None
             return
-
         user_id = decoded.get('user_id')
         conn = get_db_connection()
         if not conn:  # <-- ADICIONAR ESTA VERIFICAÇÃO
             g.current_user = None
             return
-
         cur = conn.cursor()
         cur.execute('SELECT id, name, username, email, role FROM usuarios WHERE id = %s', (user_id,))
         user = cur.fetchone()
