@@ -898,7 +898,7 @@ async function bindForgotPassword(container) {
             const resetLink = `${location.origin}${location.pathname}#reset-password/${res.token}`;
             const templateParams = {
                 to_name: res.user_name,
-                to_email: email,
+                to_email: res.user_email, // <-- ALTERADO: Usar o e-mail retornado pela API
                 from_name: "Cemitério Online",
                 reset_link: resetLink,
                 message: `Olá, ${res.user_name}. Use o link a seguir para redefinir sua senha. Ele expira em 10 minutos.`
@@ -906,7 +906,7 @@ async function bindForgotPassword(container) {
 
             
             emailjs.send('service_vvh1pri', 'template_f4lqfg9', templateParams)
-                .then((response) => {t
+                .then((response) => {
                    console.log('E-mail de recuperação enviado!', response.status, response.text);
                    alert('Um link de recuperação foi enviado para o seu e-mail.');
                 }, (error) => {
