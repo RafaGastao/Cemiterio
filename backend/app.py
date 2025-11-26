@@ -13,8 +13,11 @@ import base64
 
 from flask import Flask, jsonify, request, g, send_from_directory, Response
 from flask_cors import CORS
-from flask_mail import Mail, Message
 from dotenv import load_dotenv
+
+# Imports do SendGrid
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP, AES
@@ -62,31 +65,31 @@ frontend_url = os.getenv('FRONTEND_URL', 'http://127.0.0.1:5500')
 CORS(app, resources={r"/api/*": {"origins": [frontend_url, "http://localhost:5500", "https://cemiterio-0elv.onrender.com"]}})
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'muda_essa_chave_para_producao')
 
-# --- NOVA CONFIGURAÇÃO DO FLASK-MAIL ---
-# Use variáveis de ambiente para configurar o servidor de e-mail
-app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
-app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
-app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'true').lower() in ['true', '1', 't']
-app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME') # Ex: seu-email@gmail.com
-app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD') # Ex: senha de app do gmail
-app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', app.config['MAIL_USERNAME'])
-
-mail = Mail(app)
-
-# --- NOVO HELPER PARA ENVIO DE E-MAIL ASSÍNCRONO ---
-def send_async_email(app, msg):
-    with app.app_context():
-        try:
-            mail.send(msg)
-            app.logger.info(f"Email sent successfully to {msg.recipients}")
-        except Exception as e:
-            app.logger.error(f"Failed to send email: {e}")
+# --- NOVO HELPER PARA ENVIO DE E-MAIL COM SENDGRID ---
+def send_async_email(app, message):
+    """Envia um e-mail usando a API do SendGrid."""
+    try:
+        sendgrid_client = SendGridAPIClient(os.environ.get('SENDGRID_API_KEY'))
+        response = sendgrid_client.send(message)
+        app.logger.info(f"Email sent via SendGrid, status code: {response.status_code}")
+    except Exception as e:
+        app.logger.error(f"Failed to send email via SendGrid: {e}")
 
 def send_email(subject, recipients, html_body):
     """Função para disparar o envio de e-mail em uma thread separada."""
-    msg = Message(subject, recipients=recipients)
-    msg.html = html_body
-    thread = Thread(target=send_async_email, args=(app, msg))
+    # O remetente deve ser um e-mail verificado no SendGrid
+    sender_email = os.getenv('MAIL_DEFAULT_SENDER')
+    if not sender_email:
+        app.logger.error("MAIL_DEFAULT_SENDER não está configurado nas variáveis de ambiente.")
+        return
+
+    message = Mail(
+        from_email=sender_email,
+        to_emails=recipients,
+        subject=subject,
+        html_content=html_body)
+    
+    thread = Thread(target=send_async_email, args=(app, message))
     thread.start()
 # --- FIM DAS NOVAS CONFIGURAÇÕES DE E-MAIL ---
 
