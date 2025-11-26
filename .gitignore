@@ -1,0 +1,29 @@
+# Arquivo para ignorar arquivos e pastas do controle de versão do Git
+
+# Arquivos de ambiente
+# NUNCA remova esta linha. Ela protege suas senhas e chaves.
+.env
+secrets.env
+
+# Arquivos de cache e compilados do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Pastas de ambiente virtual
+venv/
+env/
+.venv/
+
+# Arquivos de log
+*.log
+app.log
+
+# Arquivos de banco de dados local (se usar SQLite, por exemplo)
+*.sqlite3
+*.db
+
+# Arquivos de sistema operacional
+.DS_Store
+Thumbs.db

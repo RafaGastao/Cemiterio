@@ -14,11 +14,15 @@ import base64
 from flask import Flask, jsonify, request, g, send_from_directory, Response
 from flask_cors import CORS
 from flask_mail import Mail, Message
+from dotenv import load_dotenv
 
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP, AES
 from Crypto.Util.Padding import pad, unpad
 from Crypto.Hash import SHA256
+
+# Carrega as variáveis de ambiente do arquivo .env
+load_dotenv()
 
 # --- CONFIGURAÇÃO DE CRIPTOGRAFIA ---
 # Carrega as chaves das variáveis de ambiente para persistência
@@ -1253,7 +1257,7 @@ def financeiro_single(fid):
     try:
         if request.method == 'GET':
             cur.execute('SELECT id, tipo, descricao, valor, data, status FROM financeiro WHERE id=%s', (fid,))
-            row = cur.fetchone();
+            row = cur.fetchone()
             if not row: return jsonify({}),404
             return jsonify(row)
         
@@ -1303,5 +1307,6 @@ def financeiro_single(fid):
     finally:
         cur.close()
         conn.close()
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
