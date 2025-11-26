@@ -372,7 +372,7 @@ def forgot_password():
 
         # Envia o e-mail de recuperação
         # A URL do frontend é necessária para construir o link corretamente
-        reset_link = f"{frontend_url}/index.html#reset-password/{token}"
+        reset_link = f"{frontend_url}/#reset-password/{token}"
         
         send_email(
             subject="Recuperação de Senha - Cemitério Online",

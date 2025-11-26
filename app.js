@@ -1961,7 +1961,7 @@ function render(){
     const isAdmin = currentUser && currentUser.role === 'admin';
     const isVisitor = currentUser && currentUser.role === 'visitante';
     // REMOVIDO 'new-user' da lista de rotas de gerenciamento
-    const isManagementRoute = ['users', 'sectors', 'orders', 'finance', 'new-setor', 'new-falecido', 'new-financeiro', 'setor-vagas'].includes(route);
+    const isManagementRoute = ['users', 'setores', 'orders', 'financeiro', 'new-setor', 'new-falecido', 'new-financeiro', 'setor-vagas'].includes(route);
 
     // Bloquear rotas de gerenciamento para não administradores
     if (isManagementRoute && !isAdmin) {
