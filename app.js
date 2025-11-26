@@ -893,9 +893,31 @@ async function bindForgotPassword(container) {
         const username = el('fpUsername').value;
         try {
             const res = await forgotPassword(email, username);
-            // Redireciona para a tela de reset com o token recebido
-            location.hash = `#reset-password/${res.token}`;
-            render();
+
+            // --- NOVO: Enviar e-mail de recuperação com EmailJS ---
+            const resetLink = `${location.origin}${location.pathname}#reset-password/${res.token}`;
+            const templateParams = {
+                to_name: res.user_name,
+                to_email: email,
+                from_name: "Cemitério Online",
+                reset_link: resetLink,
+                message: `Olá, ${res.user_name}. Use o link a seguir para redefinir sua senha. Ele expira em 10 minutos.`
+            };
+
+            
+            emailjs.send('service_vvh1pri', 'template_f4lqfg9', templateParams)
+                .then((response) => {t
+                   console.log('E-mail de recuperação enviado!', response.status, response.text);
+                   alert('Um link de recuperação foi enviado para o seu e-mail.');
+                }, (error) => {
+                   console.error('Falha ao enviar e-mail de recuperação:', error);
+                   alert('Falha ao enviar e-mail. Tente novamente.');
+                });
+            // --- FIM DO NOVO CÓDIGO ---
+
+            // Apenas informa o usuário, não redireciona mais automaticamente
+            // location.hash = `#reset-password/${res.token}`;
+            // render();
         } catch (e) {
             alert('Erro: ' + e.message);
         }
@@ -2083,6 +2105,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.body.innerHTML = '<div class="card" style="border-left: 5px solid red;"><h2>Erro Crítico</h2><p>Falha na inicialização do módulo de segurança. Verifique o console para mais detalhes.</p></div>';
         return;
     }
+
+    // --- NOVO: Inicializa o EmailJS ---
+    // Substitua 'YOUR_PUBLIC_KEY' pela sua Public Key do EmailJS
+    emailjs.init({
+        publicKey: "l_74rlkYsGaoBvsQL",
+    });
+    // --- FIM DO NOVO CÓDIGO ---
 
     // O bind da navegação agora é chamado dentro do renderHeader/renderNavigation
     

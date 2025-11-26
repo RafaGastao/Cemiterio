@@ -339,8 +339,8 @@ def forgot_password():
         conn.commit()
         cur.close()
         conn.close()
-        # Retorna o token para o frontend
-        return jsonify({'token': token}), 200
+        # Retorna o token e o nome do usuário para o frontend
+        return jsonify({'token': token, 'user_name': user['name']}), 200
     else:
         cur.close()
         conn.close()
