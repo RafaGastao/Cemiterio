@@ -322,7 +322,7 @@ def forgot_password():
     cur = conn.cursor()
     
     # Valida se o email e o usuário correspondem a uma conta existente
-    cur.execute("SELECT id, name FROM usuarios WHERE email = %s AND username = %s", (email, username))
+    cur.execute("SELECT id, name, email FROM usuarios WHERE email = %s AND username = %s", (email, username))
     user = cur.fetchone()
 
     if user:
@@ -336,8 +336,8 @@ def forgot_password():
         conn.commit()
         cur.close()
         conn.close()
-        # Retorna o token e o nome do usuário para o frontend
-        return jsonify({'token': token, 'user_name': user['name']}), 200
+        # Retorna o token, o nome e o email do usuário para o frontend
+        return jsonify({'token': token, 'user_name': user['name'], 'user_email': user['email']}), 200
     else:
         cur.close()
         conn.close()
@@ -542,6 +542,8 @@ def usuarios_collection():
     if not conn: return jsonify({'error': 'DB connection error'}), 500
     cur = conn.cursor()
     if request.method == 'GET':
+        if not g.current_user or g.current_user.get('role') != 'admin':
+            return jsonify({'error': 'Acesso negado'}), 403
         cur.execute('SELECT id, name, username, email, role FROM usuarios')
         data = cur.fetchall()
         cur.close(); conn.close();
@@ -717,6 +719,8 @@ def falecidos_collection():
     cur = conn.cursor()
 
     if request.method == 'POST':
+        if not g.current_user or g.current_user.get('role') != 'admin':
+            return jsonify({'error': 'Acesso negado'}), 403
         try:
             payload = getattr(request, 'json_decrypted', request.json or {})
             cur.execute("""
@@ -724,7 +728,7 @@ def falecidos_collection():
                 VALUES (%s, %s, %s, %s, %s) RETURNING id
             """, (
                 payload.get('name'),
-                payload.get('anoNascimento'), # Frontend envia com 'N' e 'M' maiúsculos
+                payload.get('anoNascimento'),
                 payload.get('anoMorte'),
                 payload.get('setor'),
                 payload.get('vaga')
