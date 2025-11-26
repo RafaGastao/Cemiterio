@@ -8,6 +8,12 @@ const API_BASE = 'https://cemiterio-0elv.onrender.com/api';
 let token = localStorage.getItem('cem_access_token') || null;
 let currentUser = null; // populated after successful login
 
+  // --- NOVO: Inicializa o EmailJS ---
+    // Substitua 'YOUR_PUBLIC_KEY' pela sua Public Key do EmailJS
+    emailjs.init({
+        publicKey: "l_74rlkYsGaoBvsQL",
+    });
+    // --- FIM DO NOVO CÓDIGO ---
 // --- MÓDULO DE CRIPTOGRAFIA ---
 const cryptoModule = (() => {
     let serverPublicKey = null;
@@ -904,7 +910,7 @@ async function bindForgotPassword(container) {
             };
 
             
-            emailjs.send('service_vvh1pri', 'template_f4lqfg9', templateParams)
+            emailjs.send('service_9a2bv2x', 'template_f4lqfg9', templateParams)
                 .then((response) => {
                    console.log('E-mail de recuperação enviado!', response.status, response.text);
                    alert('Um link de recuperação foi enviado para o seu e-mail.');
@@ -2105,12 +2111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    // --- NOVO: Inicializa o EmailJS ---
-    // Substitua 'YOUR_PUBLIC_KEY' pela sua Public Key do EmailJS
-    emailjs.init({
-        publicKey: "l_74rlkYsGaoBvsQL",
-    });
-    // --- FIM DO NOVO CÓDIGO ---
+  
 
     // O bind da navegação agora é chamado dentro do renderHeader/renderNavigation
     
