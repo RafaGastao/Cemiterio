@@ -801,11 +801,11 @@ function renderForgotPassword() {
             <form id="forgotPasswordForm">
                 <div class="form-row">
                     <label>Email</label>
-                    <input id="fpEmail" type="email" class="input" required/>
+                    <input id="fpEmail" type="email" name="to_email" class="input" required/>
                 </div>
                 <div class="form-row">
                     <label>Nome de Usuário</label>
-                    <input id="fpUsername" type="text" class="input" required/>
+                    <input id="fpUsername" name="to_name" type="text" class="input" required/>
                 </div>
                 <div class="footer-actions">
                     <button type="submit" class="btn btn-primary">Continuar</button>
@@ -900,8 +900,7 @@ async function bindForgotPassword(container) {
                 to_name: res.user_name,
                 to_email: res.user_email,
                 from_name: "Cemitério Online",
-                reset_link: resetLink,
-                message: `Olá, ${res.user_name}. Use o link a seguir para redefinir sua senha. Ele expira em 10 minutos.`
+                reset_link: resetLink
             };
 
             
