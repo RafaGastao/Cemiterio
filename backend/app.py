@@ -204,7 +204,6 @@ def before_request_handler():
         if (encrypted_payload and 'encrypted_key' in encrypted_payload):
             decrypted_payload = decrypt_request_payload(encrypted_payload)
             if decrypted_payload is None:
-                # Retorna um erro explícito se a decriptografia falhar
                 return jsonify({'error': 'Falha na decriptografia do payload'}), 400
             # Substitui o json da requisição pelo payload decriptografado
             request.json_decrypted = decrypted_payload
@@ -1085,35 +1084,18 @@ def pedidos_collection():
             conn.close()
     
     if request.method == 'GET':
-        """Lista pedidos realizados. Admins veem todos os pedidos, usuários veem apenas os próprios."""
         try:
-            if (g.current_user and g.current_user['role'] == 'admin'):
-                # Admins podem ver todos os pedidos
-                cur.execute("""
-                    SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at
-                    FROM pedidos p
-                    LEFT JOIN usuarios u ON p.user_id = u.id
-                """)
-            elif (g.current_user):
-                # Usuários comuns veem apenas os próprios pedidos
-                cur.execute("""
-                    SELECT p.id, p.user_id, u.name AS usuario, p.nome, p.email, p.telefone, p.forma_pagamento, p.total, p.status, p.created_at
-                    FROM pedidos p
-                    LEFT JOIN usuarios u ON p.user_id = u.id
-                    WHERE p.user_id = %s
-                """, (g.current_user['id'],))
+            if g.current_user and g.current_user['role'] == 'admin':
+                cur.execute('SELECT id, nome, total, status, created_at FROM pedidos ORDER BY id DESC')
+            elif g.current_user:
+                cur.execute('SELECT id, nome, total, status, created_at FROM pedidos WHERE user_id = %s ORDER BY id DESC', (g.current_user['id'],))
             else:
-                # Se não estiver logado, retorna lista vazia ou erro
-                cur.close()
-                conn.close()
-                return jsonify([]), 200
-
-            pedidos = cur.fetchall()
+                return jsonify({'error': 'Acesso negado'}), 403
             
-            # Resposta para GET não será mais criptografada
+            pedidos = cur.fetchall()
             return jsonify(pedidos)
         except Exception as e:
-            app.logger.error(f"Error fetching pedidos: {e}")
+            app.logger.error(f"Error fetching orders: {e}")
             return jsonify({'error': 'internal server error'}), 500
         finally:
             cur.close()
