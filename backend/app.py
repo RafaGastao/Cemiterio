@@ -210,6 +210,7 @@ def before_request_handler():
         else:
             # Se a criptografia é esperada mas não veio, pode ser um erro ou ataque
             app.logger.warning(f"Unencrypted payload received for protected route {request.path}")
+
 # Middleware para autenticação e obtenção do usuário atual
 # @app.before_request # Esta função foi movida para 'before_request_handler'
 def authenticate_user():

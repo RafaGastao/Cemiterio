@@ -895,28 +895,28 @@ async function bindForgotPassword(container) {
     if (!form) return;
     form.onsubmit = async (e) => {
         e.preventDefault();
+        console.log("ta aqui")
         const email = el('fpEmail').value;
         const username = el('fpUsername').value;
         try {
-            const res = await forgotPassword(email, username);
-
+            
             // --- NOVO: Enviar e-mail de recuperação com EmailJS ---
             const resetLink = `${location.origin}${location.pathname}#reset-password/${res.token}`;
             const templateParams = {
-                to_name: res.user_name,
-                to_email: res.user_email,
+                to_name: username,
+                to_email: email,
                 from_name: "Cemitério Online",
                 reset_link: resetLink
             };
 
             
-            emailjs.send('service_9a2bv2x', 'template_f4lqfg9', templateParams)
+            emailjs.send('service_vvh1pri', 'template_f4lqfg9', templateParams)
                 .then((response) => {
-                   console.log('E-mail de recuperação enviado!', response.status, response.text);
-                   alert('Um link de recuperação foi enviado para o seu e-mail.');
+                    alert('Um e-mail de recuperação foi enviado para ' + res.user_email);
+                    console.log('SUCCESS!', response.status, response.text);
                 }, (error) => {
-                   console.error('Falha ao enviar e-mail de recuperação:', error);
-                   alert('Falha ao enviar e-mail. Tente novamente.');
+                    alert('Falha ao enviar e-mail de recuperação. Erro: ' + JSON.stringify(error));
+                    console.log('FAILED...', error);
                 });
             // --- FIM DO NOVO CÓDIGO ---
 
