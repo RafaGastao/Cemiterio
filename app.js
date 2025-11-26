@@ -8,12 +8,6 @@ const API_BASE = 'https://cemiterio-0elv.onrender.com/api';
 let token = localStorage.getItem('cem_access_token') || null;
 let currentUser = null; // populated after successful login
 
-  // --- NOVO: Inicializa o EmailJS ---
-    // Substitua 'YOUR_PUBLIC_KEY' pela sua Public Key do EmailJS
-    emailjs.init({
-        publicKey: "l_74rlkYsGaoBvsQL",
-    });
-    // --- FIM DO NOVO CÓDIGO ---
 // --- MÓDULO DE CRIPTOGRAFIA ---
 const cryptoModule = (() => {
     let serverPublicKey = null;
@@ -895,34 +889,14 @@ async function bindForgotPassword(container) {
     if (!form) return;
     form.onsubmit = async (e) => {
         e.preventDefault();
-        console.log("ta aqui")
         const email = el('fpEmail').value;
         const username = el('fpUsername').value;
         try {
-            
-            // --- NOVO: Enviar e-mail de recuperação com EmailJS ---
-            const resetLink = `${location.origin}${location.pathname}#reset-password/${res.token}`;
-            const templateParams = {
-                to_name: username,
-                to_email: email,
-                from_name: "Cemitério Online",
-                reset_link: resetLink
-            };
-
-            
-            emailjs.send('service_vvh1pri', 'template_f4lqfg9', templateParams)
-                .then((response) => {
-                    alert('Um e-mail de recuperação foi enviado para ' + res.user_email);
-                    console.log('SUCCESS!', response.status, response.text);
-                }, (error) => {
-                    alert('Falha ao enviar e-mail de recuperação. Erro: ' + JSON.stringify(error));
-                    console.log('FAILED...', error);
-                });
-            // --- FIM DO NOVO CÓDIGO ---
-
-            // Apenas informa o usuário, não redireciona mais automaticamente
-            // location.hash = `#reset-password/${res.token}`;
-            // render();
+            // A API agora cuida do envio do e-mail
+            const res = await forgotPassword(email, username);
+            alert(res.message); // Exibe a mensagem retornada pela API
+            location.hash = '#login'; // Redireciona para a página de login
+            render();
         } catch (e) {
             alert('Erro: ' + e.message);
         }

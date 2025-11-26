@@ -12,7 +12,8 @@ import json
 import base64
 
 from flask import Flask, jsonify, request, g, send_from_directory, Response
-from flask_cors import CORS 
+from flask_cors import CORS
+from flask_mail import Mail, Message
 
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP, AES
@@ -56,6 +57,34 @@ app.logger.setLevel(logging.INFO)
 frontend_url = os.getenv('FRONTEND_URL', 'http://127.0.0.1:5500')
 CORS(app, resources={r"/api/*": {"origins": [frontend_url, "http://localhost:5500", "https://cemiterio-0elv.onrender.com"]}})
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'muda_essa_chave_para_producao')
+
+# --- NOVA CONFIGURAÇÃO DO FLASK-MAIL ---
+# Use variáveis de ambiente para configurar o servidor de e-mail
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'true').lower() in ['true', '1', 't']
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME') # Ex: seu-email@gmail.com
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD') # Ex: senha de app do gmail
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', app.config['MAIL_USERNAME'])
+
+mail = Mail(app)
+
+# --- NOVO HELPER PARA ENVIO DE E-MAIL ASSÍNCRONO ---
+def send_async_email(app, msg):
+    with app.app_context():
+        try:
+            mail.send(msg)
+            app.logger.info(f"Email sent successfully to {msg.recipients}")
+        except Exception as e:
+            app.logger.error(f"Failed to send email: {e}")
+
+def send_email(subject, recipients, html_body):
+    """Função para disparar o envio de e-mail em uma thread separada."""
+    msg = Message(subject, recipients=recipients)
+    msg.html = html_body
+    thread = Thread(target=send_async_email, args=(app, msg))
+    thread.start()
+# --- FIM DAS NOVAS CONFIGURAÇÕES DE E-MAIL ---
 
 
 # --- HELPERS DE CRIPTOGRAFIA ---
@@ -309,11 +338,11 @@ def forgot_password():
     """
     Inicia o processo de recuperação de senha.
     Verifica se o e-mail e o nome de usuário correspondem a uma conta existente.
-    Se sim, gera um token de uso único e o retorna ao cliente.
+    Se sim, gera um token, constrói o link de recuperação e envia por e-mail.
     """
     data = request.get_json()
     email = data.get('email')
-    username = data.get('username') # Novo campo
+    username = data.get('username')
     if not email or not username:
         return jsonify({'error': 'Email e nome de usuário são obrigatórios'}), 400
 
@@ -321,28 +350,41 @@ def forgot_password():
     if not conn: return jsonify({'error': 'Falha na conexão com o banco de dados'}), 500
     cur = conn.cursor()
     
-    # Valida se o email e o usuário correspondem a uma conta existente
     cur.execute("SELECT id, name, email FROM usuarios WHERE email = %s AND username = %s", (email, username))
     user = cur.fetchone()
 
     if user:
         token = str(uuid.uuid4())
-        expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=10) # Token de curta duração
+        expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=15) # Token de 15 minutos
         
         cur.execute(
             "INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (%s, %s, %s)",
             (user['id'], token, expires_at)
         )
         conn.commit()
-        cur.close()
-        conn.close()
-        # Retorna o token, o nome e o email do usuário para o frontend
-        return jsonify({'token': token, 'user_name': user['name'], 'user_email': user['email']}), 200
-    else:
-        cur.close()
-        conn.close()
-        # Resposta de erro se a combinação não for encontrada
-        return jsonify({'error': 'Usuário ou email inválido'}), 404
+
+        # Envia o e-mail de recuperação
+        # A URL do frontend é necessária para construir o link corretamente
+        reset_link = f"{frontend_url}/index.html#reset-password/{token}"
+        
+        send_email(
+            subject="Recuperação de Senha - Cemitério Online",
+            recipients=[user['email']],
+            html_body=f"""
+                <p>Olá, {user['name']},</p>
+                <p>Você solicitou a redefinição de sua senha. Clique no link abaixo para continuar:</p>
+                <p><a href="{reset_link}">Redefinir minha senha</a></p>
+                <p>Se você não solicitou isso, por favor, ignore este e-mail.</p>
+                <p>O link expira em 15 minutos.</p>
+            """
+        )
+    
+    cur.close()
+    conn.close()
+
+    # Resposta genérica para não revelar se o usuário/email existe
+    return jsonify({'message': 'Se o usuário e o e-mail estiverem corretos, um link de recuperação foi enviado.'}), 200
+
 
 @app.route('/api/reset-password/<token>', methods=['POST'])
 def reset_password(token):
